@@ -1,0 +1,7 @@
+struct Ball {
+  word x,    // ball horizontal position
+  word y,    // ball vertical position
+  sbyte speedx, // ball horizontal speed per frame
+  sbyte speedy,  // ball vertical speed per frame
+  byte HP
+}

@@ -1,0 +1,6 @@
+struct Sprite { //NES hardware sprite layout
+  byte y,     // Y Coordinate - 1
+  byte tile,    // tile index #
+  byte attrs,   // attributes
+  byte x      // X Coordinate
+}
