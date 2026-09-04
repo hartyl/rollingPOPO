@@ -30,8 +30,8 @@ struct Paddle_Sprs {
 
 // *CONSTANTS*
 
-const byte TOTALBALLS = 30
-const byte TOTALENEMIES = 3
+const byte TOTALBALLS = 25
+const byte TOTALENEMIES = 25
 const byte ENEMYTIMER = 60
 const byte ROLLMAXHP = 10
 const byte ENEMYSPEED = 2
@@ -47,6 +47,11 @@ const byte RIGHTWALL   = $F4  // when ball reaches one of these, do something
 const byte TOPWALL     = $18
 const byte BOTTOMWALL  = $F0
 const byte LEFTWALL    = $04
+
+const byte PAUSERIGHTWALL   = $F4  // when ball reaches one of these, do something
+const byte PAUSETOPWALL     = $18
+const byte PAUSEBOTTOMWALL  = $F0
+const byte PAUSELEFTWALL    = $04
 
 const byte PADDLE2X    = $F0
 
@@ -71,6 +76,7 @@ const byte PADDLESPRATTRHVFLIP = $C1
 // sprite tiles and attributes used by the ball
 const byte BALLSPRATTR = $01
 const byte BALLSPR = $03
+const byte ENEMYSPR = $02
 const byte gravity = 0
 
 // vram locations declared as constants for readability/convenience
@@ -153,7 +159,7 @@ inline void main_game_logic() {
     STATETITLE  @ game_title_logic
     STATEPLAYING  @ gamePlayingLogic
     STATEGAMEOVER @ game_gameover_logic
-    STATEPAUSE @ game_pause_logic
+    STATEPAUSE @ gamePauseLogic
   }
 }
 
@@ -248,6 +254,10 @@ byte maxEnemiesAtOnce
 byte sorterI
 byte bulletTurn
 byte bulletSkip
+byte bulletBuffer
+byte bulletShotgun
+bool bulletSkipCooldown
+byte ballBounce
 
 void gamePlayingInit() {
   sorterI = 0
@@ -255,10 +265,15 @@ void gamePlayingInit() {
   bulletSkip = 3
   playerInvisible = 100
   rollHP = ROLLMAXHP
-  rollMaxBullets = 3
+  rollMaxBullets = 20
   destroyedEnemies = 0
   difficulty = 0
   maxEnemiesAtOnce = 3
+  bulletBuffer = 0
+  bulletShotgun = 3
+  bulletSkipCooldown = false
+  ballBounce = 2
+
   byte i
   array ball_spr[TOTALBALLS*4] @ball_spr1.addr
   i=0
@@ -272,7 +287,7 @@ void gamePlayingInit() {
   i=0
   while i<TOTALENEMIES {
     enm_spr[i*4+0] = -1
-    enm_spr[i*4+1] = BALLSPR
+    enm_spr[i*4+1] = ENEMYSPR
     //enm_spr[i*4+2] = BALLSPRATTR
     i+=1
   }
@@ -294,6 +309,8 @@ void gamePlayingInit() {
   draw_score_text_background()
   draw_boundaries_background()
   load_play_attribute_table()
+
+  drawPauseMenu()
   //initialize the game
   game_init()
 
@@ -416,17 +433,18 @@ void gamePlayingLogic() {
   ppu_mask = %00011000
 
   movePlayer()
+
+  updateSprites()
   if input_start > 0 {
     if pauseCooldown == 0 {
       pauseCooldown = 1
       gamestate = STATEPAUSE
-      game_pause_init()
+      gamePauseInit()
     }
   } else {
     pauseCooldown = 0
   }
 
-  updateSprites()
   i = 0
   array ballSpr [TOTALBALLS*4]@ball_spr1.addr
   bool active
@@ -525,10 +543,10 @@ void gamePlayingLogic() {
     fin = bulletTurn + bulletSkip
     if fin > bulletCount {fin = bulletCount}
     while b < fin {
-      if enm->x.hi > bls[b].x.hi-8 {
-        if enm->x.hi < bls[b].x.hi+8 {
+      if enm->x.hi > bls[b].x.hi-12 {
+        if enm->x.hi < bls[b].x.hi+12 {
           y = enm->y.hi - bls[b].y.hi
-          if y+8 < 16 {
+          if y+12 < 20 {
             bulletCount -= 1
             bls[b] = bls[bulletCount]
             ballSpr[4*bulletCount] = -1
@@ -538,6 +556,10 @@ void gamePlayingLogic() {
               } else {
               enmActive = false
               destroyedEnemies += 1
+              difficulty += 1
+              maxEnemiesAtOnce = difficulty/4+3
+              if maxEnemiesAtOnce > TOTALENEMIES
+                {maxEnemiesAtOnce = TOTALENEMIES}
             }
             break
           }
@@ -590,15 +612,11 @@ void gamePlayingLogic() {
     if rollMaxBullets > TOTALBALLS {
       rollMaxBullets = TOTALBALLS
     }
-    difficulty += 1
-    maxEnemiesAtOnce = difficulty/2+3
-    if maxEnemiesAtOnce > TOTALENEMIES
-      {maxEnemiesAtOnce = TOTALENEMIES}
   }
 
   //ppu_mask = 0
   //ppu_set_addr(ppu_pallete_ram) // point the PPU to palette ram
-  //ppu_write_data(0)
+  //ppu_write_data(" ")
   //ppu_mask = %00011000
   //sprite0Hit = false
   //while ppu_status & 4 == 0 { if ppu_status < 0 {return} }
@@ -637,9 +655,21 @@ void game_gameover_logic() {
     simulate_reset()
   }
 }
-void game_pause_init() {
+
+void gamePauseInit() {
+  byte i
+  array sprsDelete[252] @$200
+  i = 0
+  while i < 252 {
+    sprsDelete[i] = -1
+    i+=4
+  }
+  drawScore()
+  ppu_set_scroll(255,0)
 }
-void game_pause_logic() {
+
+bool whiteHeart
+void gamePauseLogic() {
   read_joy1()
   if input_start > 0 {
     if pauseCooldown == 0 {
@@ -649,6 +679,20 @@ void game_pause_logic() {
   } else {
     pauseCooldown = 0
   }
+  const byte x = (word(PAUSERIGHTWALL)+PAUSELEFTWALL)/2/8-1
+  const byte y = 13
+  ppu_ctrl = %0
+  ppu_mask = %0
+  whiteHeart = not(whiteHeart)
+  if whiteHeart {
+    drawHeart(x,y)
+  } else {
+    drawHeartBlack(x,y)
+  }
+  ppu_set_scroll(255,0)
+  ppu_ctrl = %10010000   // enable NMI, sprites from Pattern Table 0, background from Pattern Table 1
+  ppu_mask = %00011000   // enable sprites, enable background, no clipping on left side
+
 }
 bool moveBall(pointer.Ball ball) {
   word speedx
@@ -763,25 +807,26 @@ void movePlayer() {
   prevB += input_b
   if cooldown < 40 {
     cooldown += 1
-    if (prevA | prevB) & 15 == 0 {
-      cooldown = -1
+    if bulletSkipCooldown {
+      if (prevA | prevB) & 15 == 0 {
+        cooldown = -1
+      }
     }
   } else if bulletCount < rollMaxBullets {
-    poinBall = bls[bulletCount].pointer
-    pA = prevA & 7
-    shatx = 0
-    shaty = 0
-    shat = false
-    if pA == %111 {
-      shatx = input_dx+bulletSpeedAdder
-      shaty = input_dy+bulletSpeedAdder
-      shat = true
-    } else if pA == %010 {
-      shatx = input_dx+bulletSpeedAdder
-      shaty = input_dy-bulletSpeedAdder
-      shat = true
-    }
-    if true {
+    if bulletBuffer == 0 {
+      pA = prevA & 7
+      shatx = 0
+      shaty = 0
+      shat = false
+      if pA == %111 {
+        shatx = input_dx+bulletSpeedAdder
+        shaty = input_dy+bulletSpeedAdder
+        shat = true
+      } else if pA == %010 {
+        shatx = input_dx+bulletSpeedAdder
+        shaty = input_dy-bulletSpeedAdder
+        shat = true
+      }
       pA = prevB & %111
       if pA == %111 {
         shatx = input_dx-bulletSpeedAdder
@@ -792,12 +837,24 @@ void movePlayer() {
         shaty = input_dy-bulletSpeedAdder
         shat = true
       }
+      if shat == true {
+        bulletBuffer = bulletShotgun
+      }
     }
-    if shat == true {
-      bulletCount += 1
-      cooldown = 0
+    if bulletBuffer > 0 {
+      poinBall = bls[bulletCount].pointer
       shootBall(poinBall, rollx, rolly, shatx, shaty)
-      poinBall->HP = (1<<5) | 3
+      bulletCount += 1
+      bulletBuffer -= 1
+      if bulletBuffer == 0 {
+        cooldown = 0
+      }
+      poinBall->HP = (1<<5)
+      if ballBounce > 0 {
+        poinBall->HP |= ballBounce
+      }
+      shatx += (rand() & 7) - 4
+      shaty += (rand() & 7) - 4
     }
   }
 
@@ -833,7 +890,7 @@ inline void load_sky_background() {
   read_ppu_status() // read PPU status to reset the high/low latch
   ppu_set_addr(ppu_nametable_ram) // point the PPU to palette ram
   for xx,0,until,$0400 {
-    ppu_write_data($00) // $00 = sky
+    ppu_write_data(' ') // $00 = sky
   }
 }
 
@@ -845,6 +902,88 @@ inline void draw_score_text_background() {
   for i,0,until,scorebackground.length {
     ppu_write_data(scorebackground[i])
   }
+}
+
+void drawPauseMenu() {
+  byte i
+
+  //draw top boundary
+  read_ppu_status() // read PPU status to reset the high/low latch
+  ppu_set_addr(ppu_nametable_ram+$420) // point the PPU to the top boundary's start
+  for i,0,until,$20 {
+    ppu_write_data($1) //write the top boundary tile
+  }
+
+  //draw bottom boundary
+  read_ppu_status() // read PPU status to reset the high/low latch
+  ppu_set_addr(ppu_nametable_ram+$780) // point the PPU to the top boundary's start
+  for i,0,until,$20 {
+    ppu_write_data($2) //write the bottom boundary tile
+  }
+
+  read_ppu_status() // read PPU status to reset the high/low latch
+  ppu_set_addr(ppu_nametable_ram+$400+word(3)*32+ 5) // point the PPU to score text's start
+  const array scorebackground = "PAUSE MENU"
+  for i,0,until,scorebackground.length {
+    ppu_write_data(scorebackground[i])
+  }
+
+  read_ppu_status() // read PPU status to reset the high/low latch
+  ppu_set_addr(ppu_nametable_ram+$400+word(5) * 32+ 5) // point the PPU to score text's start
+  const array atospend = "PRESS A TO SPEND"
+  for i,0,until,atospend.length {
+    ppu_write_data(atospend[i])
+  }
+
+  const byte x = (word(PAUSERIGHTWALL)+PAUSELEFTWALL)/2/8-1
+  const byte y = 13
+
+  ppu_set_addr(ppu_nametable_ram+$400+word(y) * 32+ x)
+  //TOP
+  ppu_write_data($82)
+  ppu_write_data($81)
+  ppu_write_data($81)
+  ppu_write_data($83)
+
+  ppu_ctrl = %00000100
+  //MIDDLE
+  ppu_set_addr(ppu_nametable_ram+$400+word(y+1) * 32+ x)
+  ppu_write_data($83)
+  ppu_write_data($83)
+
+  ppu_set_addr(ppu_nametable_ram+$400+word(y+1) * 32+ x+3)
+  ppu_write_data($82)
+  ppu_write_data($82)
+
+  ppu_ctrl = 0
+
+  drawHeart(x,y)
+  drawHeartBlack(x,y)
+
+  //BOTTOM
+  ppu_set_addr(ppu_nametable_ram+$400+word(y+3) * 32+ x)
+  ppu_write_data($82)
+  ppu_write_data($81)
+  ppu_write_data($81)
+  ppu_write_data($83)
+}
+
+void drawHeart(byte x, byte y) {
+  ppu_set_addr(ppu_nametable_ram+$400+word(y+1) * 32+ x+1)
+  ppu_write_data($1e)
+  ppu_write_data($1e)
+  ppu_set_addr(ppu_nametable_ram+$400+word(y+2) * 32+ x+1)
+  ppu_write_data($84)
+  ppu_write_data($85)
+}
+
+void drawHeartBlack(byte x, byte y) {
+  ppu_set_addr(ppu_nametable_ram+$400+word(y+1) * 32+ x+1)
+  ppu_write_data($7f)
+  ppu_write_data($7f)
+  ppu_set_addr(ppu_nametable_ram+$400+word(y+2) * 32+ x+1)
+  ppu_write_data($5c)
+  ppu_write_data($2f)
 }
 
 inline void draw_boundaries_background() {
@@ -1080,9 +1219,11 @@ inline void drawScore() {
   digit10 %%= 10
 
   ppu_set_addr(ppu_nametable_ram+$29) // point the PPU to player1's score number
-  if digit10 > 0 {
-    ppu_write_data(digit10 + '0')
-  }
+  ppu_write_data(digit10 + '0')
+  ppu_write_data(digit01 + '0')
+
+  ppu_set_addr(ppu_nametable_ram+$420+$3C)
+  ppu_write_data(digit10 + '0')
   ppu_write_data(digit01 + '0')
 
   //display player2's score
@@ -1091,10 +1232,9 @@ inline void drawScore() {
   digit10 %%= 10
 
   ppu_set_addr(ppu_nametable_ram+$3C) // point the PPU to player2's score number
-  //if digit10 > 0 {
-    ppu_write_data(digit10 + '0')
-  //}
+  ppu_write_data(digit10 + '0')
   ppu_write_data(digit01 + '0')
+
 }
 
 
