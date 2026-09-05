@@ -2,6 +2,113 @@ struct Ball {
   word x,    // ball horizontal position
   word y,    // ball vertical position
   sbyte speedx, // ball horizontal speed per frame
-  sbyte speedy,  // ball vertical speed per frame
-  byte HP
+  sbyte speedy  // ball vertical speed per frame
+}
+
+bool moveBall(pointer.Ball ball) {
+  word speedx
+  word speedy
+  speedx.hi = ball->speedx
+  speedy.hi = ball->speedy
+  bool active
+  active = true
+  if ball->speedy<0 {
+      if ball->y.hi < TOPWALL {
+        //bounce, ball now moving down
+        if isBouncy(ball) {
+          ball->speedy = -ball->speedy
+          ball->y.hi = TOPWALL
+          ball->y.lo -= 1
+        } else {
+          active = false
+        }
+      }
+    //if ball->speedy < gravity {
+    //  ball->speedy = 0
+    //  ball->down = false
+    //}
+    //else
+    //  {ball->speedy -= gravity}
+    speedy.hi -= 1
+    speedy /= 4
+    speedy.hi |= 192
+  } else {
+    if ball->y.hi > BOTTOMWALL - 8 {
+      //bounce, ball now moving up
+      //ball->y.hi = BOTTOMWALL - 8
+      if isBouncy(ball) {
+        ball->speedy = -ball->speedy
+        ball->y.hi = BOTTOMWALL-8
+        ball->y.lo -= 1
+      } else {
+        active = false
+      }
+    }
+    //ball->speedy += gravity
+    speedy /= 4
+  }
+
+  if ball->speedx>0 {
+    if ball->x.hi > RIGHTWALL-8 {
+      // ball has gone past a paddle and hit the right wall
+      // give player1 a point and reset the ball
+      if isBouncy(ball) {
+        ball->speedx = -ball->speedx
+        ball->x.hi = RIGHTWALL-8
+        ball->y.lo -= 1
+      } else {
+        active = false
+      }
+    }
+    speedx /= 4
+  } else {
+    if ball->x.hi < LEFTWALL {
+      // ball has gone past a paddle and hit the left wall
+      // give player2 a point and reset the ball
+      if isBouncy(ball) {
+        ball->speedx = -ball->speedx
+        ball->x.hi = LEFTWALL
+        ball->y.lo -= 1
+      } else {
+        active = false
+      }
+    }
+    speedx.hi -= 1
+    speedx /= 4
+    speedx.hi |= 192
+  }
+  speedx.lo &= %11000000
+  speedy.lo &= %11000000
+  ball->x += speedx
+  ball->y += speedy
+  return active
+}
+
+void shootBall(pointer.Ball ball, byte x,byte y, sbyte spdx, sbyte spdy) {
+  ball->speedx = spdx
+  ball->speedy = spdy
+  ball->x.hi = x
+  ball->y.hi = y
+}
+
+byte bouncesLeft(pointer.Ball ball) {
+  return ball.y.lo & 3
+}
+
+bool isBouncy(pointer.Ball ball){
+  if ball->y.lo & %11 > 0 {
+    return true
+  }
+  return false
+}
+
+bool isFollowy(pointer.Ball ball) {
+  if ball->x.lo & (1<<5) > 0 {
+    return true
+  }
+  return false
+}
+
+void setHP(pointer.Ball ball, byte amount) {
+  ball->x.lo = amount
 }

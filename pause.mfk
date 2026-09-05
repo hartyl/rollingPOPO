@@ -1,0 +1,231 @@
+const byte PAUSETOPWALL     = 128/8-8
+const byte PAUSELEFTWALL    = 128/8-8
+const byte PAUSERIGHTWALL   = PAUSELEFTWALL+8*2
+const byte PAUSEBOTTOMWALL  = PAUSETOPWALL+8*2
+
+const array chip0 = [
+  %11111111,
+  %11111111,
+  %11111111,
+  %11111111,
+  %11111111,
+  %11111111,
+  %11111111,
+  %11111111
+]
+const array heartSocket = [%11,%11]
+const array heartSocketCells = [0,1,0+8,1+8]
+array socketOwner[8*8]
+
+void placeOnSocket(byte x, byte y, byte id) {
+}
+
+array sockets [8]
+void gamePauseInit() {
+  byte i
+  array sprsDelete[252] @$200
+  i = 0
+  while i < 252 {
+    sprsDelete[i] = -1
+    i+=4
+  }
+  drawScore()
+  ppu_set_scroll(255,0)
+}
+
+bool whiteHeart
+void gamePauseLogic() {
+  ppu_ctrl = %0
+  ppu_mask = %0
+  const byte xH = (word(PAUSERIGHTWALL)+PAUSELEFTWALL)/2-1
+  const byte yH = (word(PAUSEBOTTOMWALL)+PAUSETOPWALL)/2-2
+  whiteHeart = not(whiteHeart)
+  if whiteHeart {
+    //drawHeart(xH,yH)
+  } else {
+    //drawHeartBlack(xH,yH)
+  }
+  read_joy1()
+  prevA += input_a
+  prevB += input_b
+  if score1 >= 1 {
+    if prevA == %011 {
+      score1 -= 1
+      drawScore()
+      rollMaxBullets += 1
+      if rollMaxBullets > TOTALBALLS {
+        rollMaxBullets = TOTALBALLS
+      }
+    }
+  }
+  ppu_set_scroll(255,0)
+  ppu_ctrl = %10010000   // enable NMI, sprites from Pattern Table 0, background from Pattern Table 1
+  ppu_mask = %00011000   // enable sprites, enable background, no clipping on left side
+  if input_start > 0 {
+    if pauseCooldown == 0 {
+      pauseCooldown = 1
+      gamestate = STATEPLAYING
+    }
+  } else {
+    pauseCooldown = 0
+  }
+  prevA *= 2
+  prevB *= 2
+  cursorX += input_dx
+  cursorY += input_dy
+  rollSpr.head.x = cursorX
+  rollSpr.head.tile = $4
+  rollSpr.head.attrs = ROLLSPRATTR
+  rollSpr.head.y = cursorY
+
+  rollSpr.body1.x = cursorX
+  rollSpr.body1.tile = $14
+  rollSpr.body1.attrs = ROLLSPRATTR
+  rollSpr.body1.y = cursorY+8
+}
+
+byte cursorX
+byte cursorY
+
+void drawPauseMenu() {
+  cursorX = 127
+  cursorY = 127
+  byte i
+  for i,0,until,8 {
+    sockets[i] = %11111111
+  }
+
+  //draw top boundary
+  read_ppu_status() // read PPU status to reset the high/low latch
+  ppu_set_addr(ppu_nametable_ram+$420) // point the PPU to the top boundary's start
+  for i,0,until,$20 {
+    ppu_write_data($1) //write the top boundary tile
+  }
+
+  //draw bottom boundary
+  read_ppu_status() // read PPU status to reset the high/low latch
+  ppu_set_addr(ppu_nametable_ram+$780)
+  for i,0,until,$20 {
+    ppu_write_data($2) //write the bottom boundary tile
+  }
+
+  read_ppu_status() // read PPU status to reset the high/low latch
+  ppu_set_addr(ppu_nametable_ram+$400+word(3)*32+ 5)
+  const array scorebackground = "PAUSE MENU"
+  for i,0,until,scorebackground.length {
+    ppu_write_data(scorebackground[i])
+  }
+
+  read_ppu_status() // read PPU status to reset the high/low latch
+  ppu_set_addr(ppu_nametable_ram+$400+word(5) * 32+ 5)
+  const array atospend = "PRESS A TO SPEND"
+  for i,0,until,atospend.length {
+    ppu_write_data(atospend[i])
+  }
+  for i,0,until,socketOwner.length {
+    socketOwner[i] = 0
+  }
+
+  //TODO check the functionality of this
+  const byte xH = (PAUSERIGHTWALL+PAUSELEFTWALL)/2-3
+  const byte yH = (PAUSEBOTTOMWALL+PAUSETOPWALL)/2-4
+  drawHeartContainer(xH,yH)
+  //sockets[(yH-PAUSETOPWALL)/2+0] &= (-1)-(heartSocket[0]<<((xH-PAUSELEFTWALL)/2))
+  //sockets[(yH-PAUSETOPWALL)/2+1] &= (-1)-(heartSocket[1]<<((xH-PAUSELEFTWALL)/2))
+
+  for i,0,until,heartSocketCells.length {
+    socketOwner[((yH-PAUSETOPWALL)/2)*8 + ((xH-PAUSELEFTWALL)/2)+heartSocketCells[i]] = 1
+    sockets[(yH-PAUSETOPWALL)/2 + heartSocketCells[i]/8] &= (-1)-POWS2[((heartSocketCells[i])&7)+6- ((xH-PAUSELEFTWALL)/2)]
+  }
+
+  ppu_ctrl = %00000000
+  byte j
+  for j,PAUSETOPWALL,until,PAUSEBOTTOMWALL {
+    ppu_set_addr(ppu_nametable_ram+$400+word(j) * 32+ PAUSELEFTWALL+1)
+    if j&1>0 {
+      for i,0,until,(PAUSERIGHTWALL-PAUSELEFTWALL)/2 {
+        //if socketOwner[((j-PAUSETOPWALL)/2)*8+i] == 0 {
+        if sockets[(j-PAUSETOPWALL)/2] & POWS2[7-i] > 0 {
+          ppu_write_data(' ')
+          ppu_write_data('.')
+        } else {
+          ppu_set_addr(ppu_nametable_ram+$400+word(j) * 32+ PAUSELEFTWALL+1+2+word(i)*2)
+        }
+        //ppu_write_data($84)
+        //ppu_write_data($85)
+      }
+    } else {
+      for i,0,until,(PAUSERIGHTWALL-PAUSELEFTWALL)/2 {
+        //if socketOwner[((j-PAUSETOPWALL)/2)*8+i] == 0 {
+        if sockets[(j-PAUSETOPWALL)/2] & POWS2[7-i] > 0 {
+          ppu_write_data('.')
+          ppu_write_data(' ')
+        } else {
+          ppu_set_addr(ppu_nametable_ram+$400+word(j) * 32+ PAUSELEFTWALL+1+2+word(i)*2)
+        }
+        //ppu_write_data($87)
+        //ppu_write_data($86)
+      }
+    }
+  }
+  ppu_ctrl = %00000100
+  ////LEFT WALL
+  //ppu_set_addr(ppu_nametable_ram+$400+word(PAUSETOPWALL) * 32+ PAUSELEFTWALL)
+  //for i,0,until,PAUSEBOTTOMWALL-PAUSETOPWALL {
+  //  ppu_write_data($81)
+  //}
+
+  ////RIGHT WALL
+  //ppu_set_addr(ppu_nametable_ram+$400+word(PAUSETOPWALL) * 32+ PAUSERIGHTWALL+1)
+  //for i,0,until,PAUSEBOTTOMWALL-PAUSETOPWALL {
+  //  ppu_write_data($81)
+  //}
+  ppu_ctrl = 0
+}
+
+void drawHeart(byte x, byte y) {
+  ppu_set_addr(ppu_nametable_ram+$400+word(y+1) * 32+ x+1)
+  ppu_write_data($1e)
+  ppu_write_data($1e)
+  ppu_set_addr(ppu_nametable_ram+$400+word(y+2) * 32+ x+1)
+  ppu_write_data($84)
+  ppu_write_data($85)
+}
+
+void drawHeartBlack(byte x, byte y) {
+  ppu_set_addr(ppu_nametable_ram+$400+word(y+1) * 32+ x+1)
+  ppu_write_data($7f)
+  ppu_write_data($7f)
+  ppu_set_addr(ppu_nametable_ram+$400+word(y+2) * 32+ x+1)
+  ppu_write_data($5c)
+  ppu_write_data($2f)
+}
+
+void drawHeartContainer(byte x, byte y) {
+  ppu_set_addr(ppu_nametable_ram+$400+word(y) * 32+ x)
+  //TOP
+  ppu_write_data($82)
+  ppu_write_data($81)
+  ppu_write_data($81)
+  ppu_write_data($83)
+
+  drawHeart(x,y)
+
+  //BOTTOM
+  ppu_set_addr(ppu_nametable_ram+$400+word(y+3) * 32+ x)
+  ppu_write_data($82)
+  ppu_write_data($81)
+  ppu_write_data($81)
+  ppu_write_data($83)
+
+  ppu_ctrl = %00000100
+  //MIDDLE
+  ppu_set_addr(ppu_nametable_ram+$400+word(y+1) * 32 +x)
+  ppu_write_data($83)
+  ppu_write_data($83)
+
+  ppu_set_addr(ppu_nametable_ram+$400+word(y+1) * 32 +x+3)
+  ppu_write_data($82)
+  ppu_write_data($82)
+}
+

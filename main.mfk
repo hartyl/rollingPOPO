@@ -12,10 +12,10 @@ import nes_joy
 // *STRUCT DEFINTIONS*
 
 import ball
-
 import sprite
+import pause
 
-struct Paddle_Sprs {
+struct playerSpr {
   Sprite arm1,
   Sprite foot1,
   Sprite head,
@@ -48,30 +48,25 @@ const byte TOPWALL     = $18
 const byte BOTTOMWALL  = $F0
 const byte LEFTWALL    = $04
 
-const byte PAUSERIGHTWALL   = $F4  // when ball reaches one of these, do something
-const byte PAUSETOPWALL     = $18
-const byte PAUSEBOTTOMWALL  = $F0
-const byte PAUSELEFTWALL    = $04
+const byte ROLL2X    = $F0
 
-const byte PADDLE2X    = $F0
-
-const byte PADDLEHEIGHT   = $18  // height of each paddle in pixels
+const byte ROLLHEIGHT   = $18  // height of each paddle in pixels
 
 // sprite tiles used by the paddles
 const byte ROLLRIBBONSPR   = 01
-const byte PADDLETOPBOTSPR = 02
+const byte ROLLTOPBOTSPR = 02
 const byte ROLLPONYTAILSPR = 17
-const byte PADDLEBODYSPR   = 18
-const byte PADDLEARMSPR    = 19
-const byte PADDLEBODY2SPR  = 34
-const byte PADDLEFOOT1SPR  = 49
-const byte PADDLEFOOT2SPR  = 51
+const byte ROLLBODYSPR   = 18
+const byte ROLLARMSPR    = 19
+const byte ROLLBODY2SPR  = 34
+const byte ROLLFOOT1SPR  = 49
+const byte ROLLFOOT2SPR  = 51
 
 // sprite attributes used by the paddles
-const byte PADDLESPRATTR = $02
-const byte PADDLESPRATTRHFLIP = $41
-const byte PADDLESPRATTRVFLIP = $81
-const byte PADDLESPRATTRHVFLIP = $C1
+const byte ROLLSPRATTR = $01
+const byte ROLLSPRATTRHFLIP = $41
+const byte ROLLSPRATTRVFLIP = $81
+const byte ROLLSPRATTRHVFLIP = $C1
 
 // sprite tiles and attributes used by the ball
 const byte BALLSPRATTR = $01
@@ -96,6 +91,7 @@ byte rolly
 bool rollRight
 byte rollHP
 byte rollMaxBullets
+byte rollCooldown
 
 byte difficulty
 
@@ -106,10 +102,13 @@ byte score1   // player 1 score, 0-15
 byte score2   // player 2 score, 0-15
 array oam_buffer [256] @$200 // sprite buffer
 
-Paddle_Sprs left_paddle_sprs @$200 //  left paddle's sprites
-Sprite ball_spr1 @left_paddle_sprs.addr+sizeof(left_paddle_sprs)   //  ball's sprite
-Paddle_Sprs right_paddle_sprs @ball_spr1.addr+TOTALBALLS*sizeof(ball_spr1) // right paddle's sprites
-Sprite enemy_spr0 @right_paddle_sprs.addr+sizeof(right_paddle_sprs)
+playerSpr rollSpr @$200 //  left paddle's sprites
+Sprite ball_spr1 @rollSpr.addr+sizeof(rollSpr)   //  ball's sprite
+
+//playerSpr right_paddle_sprs @ball_spr1.addr + TOTALBALLS*sizeof(ball_spr1) // right paddle's sprites
+//Sprite enemy_spr0 @right_paddle_sprs.addr + sizeof(right_paddle_sprs)
+Sprite enemy_spr0 @ball_spr1.addr + TOTALBALLS*sizeof(ball_spr1)
+
 word timer   // counts the amount of frames that have passed
 
 array(Ball) bls [TOTALBALLS]
@@ -265,14 +264,17 @@ void gamePlayingInit() {
   bulletSkip = 3
   playerInvisible = 100
   rollHP = ROLLMAXHP
-  rollMaxBullets = 20
+  rollMaxBullets = 3
   destroyedEnemies = 0
   difficulty = 0
   maxEnemiesAtOnce = 3
   bulletBuffer = 0
-  bulletShotgun = 3
-  bulletSkipCooldown = false
-  ballBounce = 2
+  bulletShotgun = 1
+  bulletSkipCooldown = true
+  ballBounce = 0
+  rollCooldown = 30
+  ppu_set_addr(ppu_pallete_ram) // point the PPU to palette ram
+  ppu_write_data(pallete[0])
 
   byte i
   array ball_spr[TOTALBALLS*4] @ball_spr1.addr
@@ -322,13 +324,6 @@ void gamePlayingInit() {
   ppu_mask = %00011000   // enable sprites, enable background, no clipping on left side
 }
 
-void shootBall(pointer.Ball ball, byte x,byte y, sbyte spdx, sbyte spdy) {
-  ball->speedx = spdx
-  ball->speedy = spdy
-  ball->x.hi = x
-  ball->y.hi = y
-}
-
 void printAtPosition(byte x, byte y, byte tile) {
   byte xx
   byte yy
@@ -358,8 +353,12 @@ byte getSpareIndex(byte x, byte y) {
 }
 
 void gamePlayingLogic() {
-  ppu_set_addr(ppu_pallete_ram) // point the PPU to palette ram
-  ppu_write_data(pallete[0])
+  ppu_set_addr(ppu_pallete_ram+16+4+2) // point the PPU to palette ram
+  if timer.lo & 1 > 0 {
+    ppu_write_data($36)
+  } else {
+    ppu_write_data($27)
+  }
   drawScore()
 
   //printAtPosition(balls[0]->x.hi,balls[0]->y.hi)
@@ -371,7 +370,7 @@ void gamePlayingLogic() {
   if spares[index] & xx != 0 {
     xx ^= -1
     spares[index] &= xx
-    printAtPosition(rollx+4,rolly+8,0)
+    printAtPosition(rollx+4,rolly+8,' ')
     score1+=1
   }
 
@@ -387,6 +386,7 @@ void gamePlayingLogic() {
   }
   byte dir
   pointer.Ball enm
+  array enmSpr [128]@enemy_spr0.addr
   if enemyCount < maxEnemiesAtOnce {
     enemyTimer += 1
     if enemyTimer > ENEMYTIMER {
@@ -395,32 +395,51 @@ void gamePlayingLogic() {
       dir = rand()
       if dir & 2 == 2 {
         if dir & 1 == 1
-          {shootBall(enm, LEFTWALL, TOPWALL + dir/2+dir/4, 1, 0)}
+          {shootBall(enm, LEFTWALL, TOPWALL + dir/2+dir/4, 2, 0)}
         else
-          {shootBall(enm, RIGHTWALL-8, TOPWALL + dir/2+dir/4,-1, 0)}
+          {shootBall(enm, RIGHTWALL-8, TOPWALL + dir/2+dir/4,-2, 0)}
       } else {
         if dir & 1 == 1
-          {shootBall(enm, dir,TOPWALL+1,        0, 1)}
+          {shootBall(enm, dir,TOPWALL+1,        0, 2)}
         else
-          {shootBall(enm, dir,BOTTOMWALL - 8 -1, 0,-1)}
+          {shootBall(enm, dir,BOTTOMWALL - 8 -1, 0,-2)}
       }
+      enm->x.lo = 0
+      enm->y.lo = 0
       // TODO make this a progressive thing
       // maybe with constant tables
       if rand() < 200-difficulty {
-        enm->HP = 3<<5
-      } else {
-        if difficulty > 5 && rand()>150-difficulty {
-          enm->HP = (1<<5)
+        //enemy 1
+        if rand()>180 {
+          enm->x.lo = 4 //HP
+          if enm->speedx < 0 {
+            enm->speedx /= 2
+            enm->speedx |= 128
+          } else {
+            enm->speedx /= 2
+          }
+          if enm->speedy < 0 {
+            enm->speedy /= 2
+            enm->speedy |= 128
+          } else {
+            enm->speedy /= 2
+          }
+          enmSpr[enemyCount*4+1] = $08
         } else {
-          enm->HP = (0<<5)
+          enm->x.lo = 2 //HP
+          enmSpr[enemyCount*4+1] = $05
         }
-        enm->HP |= 1
-      }
-      if rand()>127 {
-        enm->HP |= 2
-        enm->HP += (2<<5)
-        enm->speedx *= 2
-        enm->speedy *= 2
+      } else {
+        //bouncy enemy
+        if difficulty > 5 && rand()>150-difficulty {
+          enm->x.lo = 2 //HP
+          enm->y.lo |= 3 //bounces
+          enmSpr[enemyCount*4+1] = $06
+        } else {
+          enm->x.lo = 1 //HP
+          enmSpr[enemyCount*4+1] = $07
+        }
+        enm->x.lo |= 1<<5 //isFollowy
       }
       enemyTimer = 1
       enemyCount += 1
@@ -481,6 +500,14 @@ void gamePlayingLogic() {
         bls[prevSorterI].y.hi = bls[sorterI].y.hi
         bls[sorterI].y.hi = swap
 
+        swap = bls[prevSorterI].x.lo
+        bls[prevSorterI].x.lo = bls[sorterI].x.lo
+        bls[sorterI].x.lo = swap
+
+        swap = bls[prevSorterI].y.lo
+        bls[prevSorterI].y.lo = bls[sorterI].y.lo
+        bls[sorterI].y.lo = swap
+
         swap = bls[prevSorterI].speedx
         bls[prevSorterI].speedx = bls[sorterI].speedx
         bls[sorterI].speedx = swap
@@ -488,10 +515,6 @@ void gamePlayingLogic() {
         swap = bls[prevSorterI].speedy
         bls[prevSorterI].speedy = bls[sorterI].speedy
         bls[sorterI].speedy = swap
-
-        swap = bls[prevSorterI].HP
-        bls[prevSorterI].HP = bls[sorterI].HP
-        bls[sorterI].HP = swap
       }
     }
   }
@@ -508,15 +531,11 @@ void gamePlayingLogic() {
   while i>0 {
     i-=1
     enm = enms[i].pointer
-    if enm->HP & 1 > 0 {
+    if isFollowy(enm) {
       enmActive = true
-      if enm->HP >= (1<<5) && enm->HP & %10 > 0 {
-        moveBall(enm)
-        enm->HP |= %11
-      } else {
-        moveBall(enm)
-      }
-      if (enm->HP & %10 == 0 && timer.lo & %111 < 2) || timer.lo & %111 == 0 {
+      moveBall(enm)
+      // accelerates faster when:
+      if ((isBouncy(enm)) && timer.lo & %1111 < 3) || timer.lo & %111 == 0 {
         if enm->x.hi > rollx {
           if enm->speedx > -8 {
             enm->speedx -= 1
@@ -537,8 +556,13 @@ void gamePlayingLogic() {
         }
       }
     }
-    else
-      {enmActive = moveBall(enm)}
+    else {
+      enmActive = moveBall(enm)
+    }
+    if isBouncy(enm) {
+      enmActive = true
+      enm->y |= 3
+    }
     b = bulletTurn
     fin = bulletTurn + bulletSkip
     if fin > bulletCount {fin = bulletCount}
@@ -547,20 +571,19 @@ void gamePlayingLogic() {
         if enm->x.hi < bls[b].x.hi+12 {
           y = enm->y.hi - bls[b].y.hi
           if y+12 < 20 {
-            bulletCount -= 1
-            bls[b] = bls[bulletCount]
-            ballSpr[4*bulletCount] = -1
-            if enm->HP > bls[b].HP {
-                enm->HP -= (bls[b].HP & (32+64+128))
-                //score2 = enm->HP
+            if (enm->x.lo & %111) >= (bls[b].x.lo & %111) {
+                enm->x.lo -= (bls[b].x.lo & %111)
               } else {
               enmActive = false
               destroyedEnemies += 1
               difficulty += 1
-              maxEnemiesAtOnce = difficulty/4+3
+              maxEnemiesAtOnce = difficulty/4+20
               if maxEnemiesAtOnce > TOTALENEMIES
                 {maxEnemiesAtOnce = TOTALENEMIES}
             }
+            bls[b] = bls[bulletCount]
+            bulletCount -= 1
+            ballSpr[4*bulletCount] = -1
             break
           }
         } else {break}
@@ -569,21 +592,25 @@ void gamePlayingLogic() {
     }
 
     if enmActive == false {
-        swap = enms[i].x.hi
-        enms[i].x.hi = enms[enemyCount-1].x.hi
-        enms[enemyCount-1].x.hi = swap
-
-        swap = enms[i].y.hi
-        enms[i].y.hi = enms[enemyCount-1].y.hi
-        enms[enemyCount-1].y.hi = swap
-
-        enms[i].speedx = enms[enemyCount-1].speedx
-        enms[i].speedy = enms[enemyCount-1].speedy
-
-        //swap = enms[i].HP
-        enms[i].HP = enms[enemyCount-1].HP
-        //enms[enemyCount-1].HP = swap
       enemyCount -= 1
+      swap = enms[i].x.hi
+      enms[i].x.hi = enms[enemyCount].x.hi
+      enms[enemyCount].x.hi = swap
+
+      swap = enms[i].y.hi
+      enms[i].y.hi = enms[enemyCount].y.hi
+      enms[enemyCount].y.hi = swap
+
+      enms[i].speedx = enms[enemyCount].speedx
+      enms[i].speedy = enms[enemyCount].speedy
+      enmSpr[i*4+1] = enmSpr[enemyCount*4+1]
+      enmSpr[i*4+2] = enmSpr[enemyCount*4+2]
+
+      enms[i].x.lo = enms[enemyCount].x.lo
+      enms[i].y.lo = enms[enemyCount].y.lo
+      //swap = enms[i].HP
+      //enms[i].HP = enms[enemyCount].HP
+      //enms[enemyCount].HP = swap
       spr[enemyCount*4] = -1
     } else if playerInvisible <= 1 {
       x = enm->x.hi - rollx
@@ -605,14 +632,7 @@ void gamePlayingLogic() {
   }
 
   score2 = rollHP
-
-  if score1 >= 10 {
-    score1 -= 10
-    rollMaxBullets += 1
-    if rollMaxBullets > TOTALBALLS {
-      rollMaxBullets = TOTALBALLS
-    }
-  }
+  //score2 = bulletCount
 
   //ppu_mask = 0
   //ppu_set_addr(ppu_pallete_ram) // point the PPU to palette ram
@@ -655,123 +675,6 @@ void game_gameover_logic() {
     simulate_reset()
   }
 }
-
-void gamePauseInit() {
-  byte i
-  array sprsDelete[252] @$200
-  i = 0
-  while i < 252 {
-    sprsDelete[i] = -1
-    i+=4
-  }
-  drawScore()
-  ppu_set_scroll(255,0)
-}
-
-bool whiteHeart
-void gamePauseLogic() {
-  read_joy1()
-  if input_start > 0 {
-    if pauseCooldown == 0 {
-      pauseCooldown = 1
-      gamestate = STATEPLAYING
-    }
-  } else {
-    pauseCooldown = 0
-  }
-  const byte x = (word(PAUSERIGHTWALL)+PAUSELEFTWALL)/2/8-1
-  const byte y = 13
-  ppu_ctrl = %0
-  ppu_mask = %0
-  whiteHeart = not(whiteHeart)
-  if whiteHeart {
-    drawHeart(x,y)
-  } else {
-    drawHeartBlack(x,y)
-  }
-  ppu_set_scroll(255,0)
-  ppu_ctrl = %10010000   // enable NMI, sprites from Pattern Table 0, background from Pattern Table 1
-  ppu_mask = %00011000   // enable sprites, enable background, no clipping on left side
-
-}
-bool moveBall(pointer.Ball ball) {
-  word speedx
-  word speedy
-  speedx.hi = ball->speedx
-  speedy.hi = ball->speedy
-  bool active
-  active = true
-  if ball->speedy<0 {
-      if ball->y.hi < TOPWALL {
-        //bounce, ball now moving down
-        if ball->HP & 2 > 0 {
-          ball->speedy = -ball->speedy
-          ball->y.hi = TOPWALL
-          ball->HP -= 1
-        } else {
-          active = false
-        }
-      }
-    //if ball->speedy < gravity {
-    //  ball->speedy = 0
-    //  ball->down = false
-    //}
-    //else
-    //  {ball->speedy -= gravity}
-    speedy.hi -= 1
-    speedy /= 4
-    speedy.hi |= 192
-  }
-  else {
-    if ball->y.hi > BOTTOMWALL - 8 {
-      //bounce, ball now moving up
-      //ball->y.hi = BOTTOMWALL - 8
-      if ball->HP & 2 > 0 {
-        ball->speedy = -ball->speedy
-        ball->y.hi = BOTTOMWALL-8
-        ball->HP -= 1
-      } else {
-        active = false
-      }
-    }
-    //ball->speedy += gravity
-    speedy /= 4
-  }
-
-  if ball->speedx>0 {
-    if ball->x.hi > RIGHTWALL-8 {
-      // ball has gone past a paddle and hit the right wall
-      // give player1 a point and reset the ball
-      if ball->HP & 2 > 0 {
-        ball->speedx = -ball->speedx
-        ball->x.hi = RIGHTWALL-8
-        ball->HP -= 1
-      } else {
-        active = false
-      }
-    }
-    speedx /= 4
-  } else {
-    if ball->x.hi < LEFTWALL {
-      // ball has gone past a paddle and hit the left wall
-      // give player2 a point and reset the ball
-      if ball->HP & 2 > 0 {
-        ball->speedx = -ball->speedx
-        ball->x.hi = LEFTWALL
-        ball->HP -= 1
-      } else {
-        active = false
-      }
-    }
-    speedx.hi -= 1
-    speedx /= 4
-    speedx.hi |= 192
-  }
-  ball->x += speedx
-  ball->y += speedy
-  return active
-}
-
 byte cooldown
 void movePlayer() {
   // Player 1 controls
@@ -783,7 +686,7 @@ void movePlayer() {
     }
   }
   else if input_dy > 0 { // Down button
-    if (rolly + PADDLEHEIGHT) < BOTTOMWALL {
+    if (rolly + ROLLHEIGHT) < BOTTOMWALL {
       rolly += 1
     }
   }
@@ -805,11 +708,11 @@ void movePlayer() {
   sbyte shaty
   prevA += input_a
   prevB += input_b
-  if cooldown < 40 {
-    cooldown += 1
+  if cooldown > 0 {
+    cooldown -= 1
     if bulletSkipCooldown {
       if (prevA | prevB) & 15 == 0 {
-        cooldown = -1
+        cooldown = 0
       }
     }
   } else if bulletCount < rollMaxBullets {
@@ -847,12 +750,11 @@ void movePlayer() {
       bulletCount += 1
       bulletBuffer -= 1
       if bulletBuffer == 0 {
-        cooldown = 0
+        cooldown = rollCooldown
       }
-      poinBall->HP = (1<<5)
-      if ballBounce > 0 {
-        poinBall->HP |= ballBounce
-      }
+      poinBall->x.lo = 1
+      poinBall->y.lo |= ballBounce
+
       shatx += (rand() & 7) - 4
       shaty += (rand() & 7) - 4
     }
@@ -865,7 +767,7 @@ void movePlayer() {
 
 void check_paddle_collision(pointer.Ball ball) {
   //Check right paddle collision
-  if ball->x.hi >= PADDLE2X-8 && ball->y.hi >= paddle2ytop && ball->y.hi <= paddle2ytop + PADDLEHEIGHT {
+  if ball->x.hi >= ROLL2X-8 && ball->y.hi >= paddle2ytop && ball->y.hi <= paddle2ytop + ROLLHEIGHT {
     //bounce the ball back, move it left
     ball->right = false
   }
@@ -902,88 +804,6 @@ inline void draw_score_text_background() {
   for i,0,until,scorebackground.length {
     ppu_write_data(scorebackground[i])
   }
-}
-
-void drawPauseMenu() {
-  byte i
-
-  //draw top boundary
-  read_ppu_status() // read PPU status to reset the high/low latch
-  ppu_set_addr(ppu_nametable_ram+$420) // point the PPU to the top boundary's start
-  for i,0,until,$20 {
-    ppu_write_data($1) //write the top boundary tile
-  }
-
-  //draw bottom boundary
-  read_ppu_status() // read PPU status to reset the high/low latch
-  ppu_set_addr(ppu_nametable_ram+$780) // point the PPU to the top boundary's start
-  for i,0,until,$20 {
-    ppu_write_data($2) //write the bottom boundary tile
-  }
-
-  read_ppu_status() // read PPU status to reset the high/low latch
-  ppu_set_addr(ppu_nametable_ram+$400+word(3)*32+ 5) // point the PPU to score text's start
-  const array scorebackground = "PAUSE MENU"
-  for i,0,until,scorebackground.length {
-    ppu_write_data(scorebackground[i])
-  }
-
-  read_ppu_status() // read PPU status to reset the high/low latch
-  ppu_set_addr(ppu_nametable_ram+$400+word(5) * 32+ 5) // point the PPU to score text's start
-  const array atospend = "PRESS A TO SPEND"
-  for i,0,until,atospend.length {
-    ppu_write_data(atospend[i])
-  }
-
-  const byte x = (word(PAUSERIGHTWALL)+PAUSELEFTWALL)/2/8-1
-  const byte y = 13
-
-  ppu_set_addr(ppu_nametable_ram+$400+word(y) * 32+ x)
-  //TOP
-  ppu_write_data($82)
-  ppu_write_data($81)
-  ppu_write_data($81)
-  ppu_write_data($83)
-
-  ppu_ctrl = %00000100
-  //MIDDLE
-  ppu_set_addr(ppu_nametable_ram+$400+word(y+1) * 32+ x)
-  ppu_write_data($83)
-  ppu_write_data($83)
-
-  ppu_set_addr(ppu_nametable_ram+$400+word(y+1) * 32+ x+3)
-  ppu_write_data($82)
-  ppu_write_data($82)
-
-  ppu_ctrl = 0
-
-  drawHeart(x,y)
-  drawHeartBlack(x,y)
-
-  //BOTTOM
-  ppu_set_addr(ppu_nametable_ram+$400+word(y+3) * 32+ x)
-  ppu_write_data($82)
-  ppu_write_data($81)
-  ppu_write_data($81)
-  ppu_write_data($83)
-}
-
-void drawHeart(byte x, byte y) {
-  ppu_set_addr(ppu_nametable_ram+$400+word(y+1) * 32+ x+1)
-  ppu_write_data($1e)
-  ppu_write_data($1e)
-  ppu_set_addr(ppu_nametable_ram+$400+word(y+2) * 32+ x+1)
-  ppu_write_data($84)
-  ppu_write_data($85)
-}
-
-void drawHeartBlack(byte x, byte y) {
-  ppu_set_addr(ppu_nametable_ram+$400+word(y+1) * 32+ x+1)
-  ppu_write_data($7f)
-  ppu_write_data($7f)
-  ppu_set_addr(ppu_nametable_ram+$400+word(y+2) * 32+ x+1)
-  ppu_write_data($5c)
-  ppu_write_data($2f)
 }
 
 inline void draw_boundaries_background() {
@@ -1101,111 +921,111 @@ void updateSprites() {
   // update body of PLAYER
   if playerInvisible > 1 {playerInvisible -= 1}
   if (playerInvisible & 3) > 0 {
-    left_paddle_sprs.head.y = rolly - 8
-    left_paddle_sprs.head.tile = PADDLETOPBOTSPR
+    rollSpr.head.y = rolly - 8
+    rollSpr.head.tile = ROLLTOPBOTSPR
     if rollRight {
-      left_paddle_sprs.head.attrs = PADDLESPRATTR
-      left_paddle_sprs.body1.attrs = PADDLESPRATTR
-      left_paddle_sprs.body2.attrs = PADDLESPRATTR
+      rollSpr.head.attrs = ROLLSPRATTR
+      rollSpr.body1.attrs = ROLLSPRATTR
+      rollSpr.body2.attrs = ROLLSPRATTR
 
-      left_paddle_sprs.foot1.attrs = PADDLESPRATTR
-      left_paddle_sprs.foot1.tile = PADDLEFOOT1SPR
-      left_paddle_sprs.foot2.attrs = PADDLESPRATTR
-      left_paddle_sprs.foot2.tile = PADDLEFOOT2SPR
+      rollSpr.foot1.attrs = ROLLSPRATTR
+      rollSpr.foot1.tile = ROLLFOOT1SPR
+      rollSpr.foot2.attrs = ROLLSPRATTR
+      rollSpr.foot2.tile = ROLLFOOT2SPR
 
-      left_paddle_sprs.arm1.attrs = PADDLESPRATTR
-      left_paddle_sprs.arm1.x = rollx-5
-      left_paddle_sprs.arm2.attrs = PADDLESPRATTR
-      left_paddle_sprs.arm2.x = rollx+5
+      rollSpr.arm1.attrs = ROLLSPRATTR
+      rollSpr.arm1.x = rollx-5
+      rollSpr.arm2.attrs = ROLLSPRATTR
+      rollSpr.arm2.x = rollx+5
 
-      left_paddle_sprs.ponytail.attrs = PADDLESPRATTR
-      left_paddle_sprs.ponytail.x = rollx-3
+      rollSpr.ponytail.attrs = ROLLSPRATTR
+      rollSpr.ponytail.x = rollx-3
     } else {
-      left_paddle_sprs.head.attrs = PADDLESPRATTRHFLIP
-      left_paddle_sprs.body1.attrs = PADDLESPRATTRHFLIP
-      left_paddle_sprs.body2.attrs = PADDLESPRATTRHFLIP
+      rollSpr.head.attrs = ROLLSPRATTRHFLIP
+      rollSpr.body1.attrs = ROLLSPRATTRHFLIP
+      rollSpr.body2.attrs = ROLLSPRATTRHFLIP
 
-      left_paddle_sprs.foot1.attrs = PADDLESPRATTRHFLIP
-      left_paddle_sprs.foot1.tile = PADDLEFOOT2SPR
-      left_paddle_sprs.foot2.attrs = PADDLESPRATTRHFLIP
-      left_paddle_sprs.foot2.tile = PADDLEFOOT1SPR
+      rollSpr.foot1.attrs = ROLLSPRATTRHFLIP
+      rollSpr.foot1.tile = ROLLFOOT2SPR
+      rollSpr.foot2.attrs = ROLLSPRATTRHFLIP
+      rollSpr.foot2.tile = ROLLFOOT1SPR
 
-      left_paddle_sprs.arm1.attrs = PADDLESPRATTRHFLIP
-      left_paddle_sprs.arm1.x = rollx+5
-      left_paddle_sprs.arm2.attrs = PADDLESPRATTRHFLIP
-      left_paddle_sprs.arm2.x = rollx-5
+      rollSpr.arm1.attrs = ROLLSPRATTRHFLIP
+      rollSpr.arm1.x = rollx+5
+      rollSpr.arm2.attrs = ROLLSPRATTRHFLIP
+      rollSpr.arm2.x = rollx-5
 
-      left_paddle_sprs.ponytail.attrs = PADDLESPRATTRHFLIP
-      left_paddle_sprs.ponytail.x = rollx+3
+      rollSpr.ponytail.attrs = ROLLSPRATTRHFLIP
+      rollSpr.ponytail.x = rollx+3
     }
-    left_paddle_sprs.head.x = rollx
+    rollSpr.head.x = rollx
 
-    left_paddle_sprs.body1.y = rolly
-    left_paddle_sprs.body1.tile = PADDLEBODYSPR
-    left_paddle_sprs.body1.x = rollx
+    rollSpr.body1.y = rolly
+    rollSpr.body1.tile = ROLLBODYSPR
+    rollSpr.body1.x = rollx
 
-    left_paddle_sprs.body2.y = rolly+8
-    left_paddle_sprs.body2.tile = PADDLEBODY2SPR
-    left_paddle_sprs.body2.x = rollx
+    rollSpr.body2.y = rolly+8
+    rollSpr.body2.tile = ROLLBODY2SPR
+    rollSpr.body2.x = rollx
 
-    left_paddle_sprs.foot1.y = rolly+14
-    left_paddle_sprs.foot1.x = rollx-5
+    rollSpr.foot1.y = rolly+14
+    rollSpr.foot1.x = rollx-5
 
-    left_paddle_sprs.foot2.y = rolly+14
-    left_paddle_sprs.foot2.x = rollx+5
+    rollSpr.foot2.y = rolly+14
+    rollSpr.foot2.x = rollx+5
 
-    left_paddle_sprs.arm1.y = rolly+4
-    left_paddle_sprs.arm1.tile = PADDLEARMSPR
+    rollSpr.arm1.y = rolly+4
+    rollSpr.arm1.tile = ROLLARMSPR
 
-    left_paddle_sprs.arm2.y = rolly+4
-    left_paddle_sprs.arm2.tile = PADDLEARMSPR
+    rollSpr.arm2.y = rolly+4
+    rollSpr.arm2.tile = ROLLARMSPR
 
-    left_paddle_sprs.ponytail.y = rolly-2
-    left_paddle_sprs.ponytail.tile = ROLLPONYTAILSPR
+    rollSpr.ponytail.y = rolly-2
+    rollSpr.ponytail.tile = ROLLPONYTAILSPR
 
-    left_paddle_sprs.ribbon1.y = rolly-4
-    left_paddle_sprs.ribbon2.y = rolly-4
-    left_paddle_sprs.ribbon1.x = rollx-3
-    left_paddle_sprs.ribbon2.x = rollx+3
-    left_paddle_sprs.ribbon1.tile = ROLLRIBBONSPR
-    left_paddle_sprs.ribbon2.tile = ROLLRIBBONSPR
-    left_paddle_sprs.ribbon1.attrs = PADDLESPRATTR
-    left_paddle_sprs.ribbon2.attrs = PADDLESPRATTRHFLIP
+    rollSpr.ribbon1.y = rolly-4
+    rollSpr.ribbon2.y = rolly-4
+    rollSpr.ribbon1.x = rollx-3
+    rollSpr.ribbon2.x = rollx+3
+    rollSpr.ribbon1.tile = ROLLRIBBONSPR
+    rollSpr.ribbon2.tile = ROLLRIBBONSPR
+    rollSpr.ribbon1.attrs = ROLLSPRATTR
+    rollSpr.ribbon2.attrs = ROLLSPRATTRHFLIP
   } else {
-    left_paddle_sprs.head.y = -1
-    left_paddle_sprs.body1.y = -1
-    left_paddle_sprs.body2.y = -1
-    left_paddle_sprs.foot1.y = -1
-    left_paddle_sprs.foot2.y = -1
-    left_paddle_sprs.arm1.y = -1
-    left_paddle_sprs.arm2.y = -1
-    left_paddle_sprs.ponytail.y = -1
-    left_paddle_sprs.ribbon1.y = -1
-    left_paddle_sprs.ribbon2.y = -1
+    rollSpr.head.y = -1
+    rollSpr.body1.y = -1
+    rollSpr.body2.y = -1
+    rollSpr.foot1.y = -1
+    rollSpr.foot2.y = -1
+    rollSpr.arm1.y = -1
+    rollSpr.arm2.y = -1
+    rollSpr.ponytail.y = -1
+    rollSpr.ribbon1.y = -1
+    rollSpr.ribbon2.y = -1
   }
 
   // update top of right paddle
-  right_paddle_sprs.head.y = paddle2ytop
-  right_paddle_sprs.head.tile = PADDLETOPBOTSPR
-  right_paddle_sprs.head.attrs = PADDLESPRATTRHVFLIP
-  right_paddle_sprs.head.x = PADDLE2X
+  //right_paddle_sprs.head.y = paddle2ytop
+  //right_paddle_sprs.head.tile = ROLLTOPBOTSPR
+  //right_paddle_sprs.head.attrs = ROLLSPRATTRHVFLIP
+  //right_paddle_sprs.head.x = ROLL2X
 
-  // update body of right paddle
-  right_paddle_sprs.body1.y = paddle2ytop + 8
-  right_paddle_sprs.body1.tile = PADDLEBODYSPR
-  right_paddle_sprs.body1.attrs = PADDLESPRATTRHVFLIP
-  right_paddle_sprs.body1.x = PADDLE2X
+  //// update body of right paddle
+  //right_paddle_sprs.body1.y = paddle2ytop + 8
+  //right_paddle_sprs.body1.tile = ROLLBODYSPR
+  //right_paddle_sprs.body1.attrs = ROLLSPRATTRHVFLIP
+  //right_paddle_sprs.body1.x = ROLL2X
 
-  right_paddle_sprs.body2.y = paddle2ytop + 16
-  right_paddle_sprs.body2.tile = PADDLEBODYSPR
-  right_paddle_sprs.body2.attrs = PADDLESPRATTRHVFLIP
-  right_paddle_sprs.body2.x = PADDLE2X
+  //right_paddle_sprs.body2.y = paddle2ytop + 16
+  //right_paddle_sprs.body2.tile = ROLLBODYSPR
+  //right_paddle_sprs.body2.attrs = ROLLSPRATTRHVFLIP
+  //right_paddle_sprs.body2.x = ROLL2X
 
   // update bottom of right paddle
   //right_paddle_sprs.paddlebottom.y = paddle2ytop + 24
-  //right_paddle_sprs.paddlebottom.tile = PADDLETOPBOTSPR
-  //right_paddle_sprs.paddlebottom.attrs = PADDLESPRATTRHFLIP
-  //right_paddle_sprs.paddlebottom.x = PADDLE2X
+  //right_paddle_sprs.paddlebottom.tile = ROLLTOPBOTSPR
+  //right_paddle_sprs.paddlebottom.attrs = ROLLSPRATTRHFLIP
+  //right_paddle_sprs.paddlebottom.x = ROLL2X
 }
 
 inline void drawScore() {
@@ -1243,7 +1063,7 @@ inline void drawScore() {
 //palletes for entire game (both title and play screens)
 const array pallete = [
   $2e,$12,$28,$20, $22,$12,$28,$20, $22,$12,$28,$20, $22,$12,$28,$20, //background palette
-  $22,$20,$12,$28, $22,$20,$12,$28, $22,$20,$12,$28, $22,$12,$28,$20  //sprite palette
+  $22,$12,$28,$20, $22,$12,$28,$20, $22,$12,$28,$20, $22,$12,$28,$20  //sprite palette
 ]
 
 //attribute table for play screen graphics
