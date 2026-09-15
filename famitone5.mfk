@@ -1,0 +1,56 @@
+array FT_TEMP   [3]     @$FD
+array FT_VARS   [256]   @$300
+
+const byte FT_SFX_STRUCT_SIZE	= 15
+const byte FT_SFX_CH0			= FT_SFX_STRUCT_SIZE*0
+const byte FT_SFX_CH1			= FT_SFX_STRUCT_SIZE*1
+const byte FT_SFX_CH2			= FT_SFX_STRUCT_SIZE*2
+const byte FT_SFX_CH3			= FT_SFX_STRUCT_SIZE*3
+
+//------------------------------------------------------------------------------
+// reset APU, initialize FamiTone
+// in: A   0 for PAL, not 0 for NTSC
+//     X,Y pointer to music data
+//------------------------------------------------------------------------------
+asm void FamiToneInit(byte a, word xy) @$C000 extern
+//------------------------------------------------------------------------------
+// play music
+// in: A number of subsong
+//------------------------------------------------------------------------------
+asm void FamiToneMusicPlay(byte a) @$C093 extern
+//------------------------------------------------------------------------------
+// play sound effect
+// in: A is a number of the sound effect
+//     X is offset of sound effect channel, should be FT_SFX_CH0..FT_SFX_CH3
+//------------------------------------------------------------------------------
+asm void FamiToneSfxPlay(byte a, byte x) @$C905 extern
+//------------------------------------------------------------------------------
+// init sound effects player, set pointer to data
+// in: X,Y is address of sound effects data
+//------------------------------------------------------------------------------
+asm void FamiToneSfxInit(word xy) @$C8CB extern
+//------------------------------------------------------------------------------
+// update FamiTone state, should be called every NMI
+// in: none
+//------------------------------------------------------------------------------
+asm void FamiToneUpdate() @$C147 extern
+//------------------------------------------------------------------------------
+// stop music that is currently playing, if any
+// in: none
+//------------------------------------------------------------------------------
+asm void FamiToneMusicStop() @$C055 extern
+//------------------------------------------------------------------------------
+// pause and unpause current music
+// in: A 0 or not 0 to play or pause
+//------------------------------------------------------------------------------
+asm void FamiToneMusicPause(byte a) @$C123 extern
+//------------------------------------------------------------------------------
+// play DPCM sample with higher priority, for sound effects
+// in: A is number of a sample, 1..63
+//------------------------------------------------------------------------------
+asm void FamiToneSamplePlay(byte a) @$C891 extern
+
+//Binary blob of famitone5, change it's starting address depending
+//on where it expects to be (normally $C000)
+segment(prgrom) const array famitone5 @ $C000 = file("famitone5.bin")
+

@@ -8,6 +8,7 @@
 
 import random
 import nes_joy
+import famitone5
 
 // *STRUCT DEFINTIONS*
 
@@ -33,7 +34,6 @@ struct playerSpr {
 const byte TOTALBALLS = 25
 const byte TOTALENEMIES = 25
 const byte ENEMYTIMER = 60
-const byte ROLLMAXHP = 10
 const byte ENEMYSPEED = 2
 
 enum Gamestate {
@@ -92,12 +92,13 @@ bool rollRight
 byte rollHP
 byte rollMaxBullets
 byte rollCooldown
+byte currentBullet
 
 byte difficulty
 
 byte pauseCooldown
 
-byte paddle2ytop   // player 2 paddle bottom vertical position
+//byte paddle2ytop   // player 2 paddle bottom vertical position
 byte score1   // player 1 score, 0-15
 byte score2   // player 2 score, 0-15
 array oam_buffer [256] @$200 // sprite buffer
@@ -130,6 +131,9 @@ byte destroyedEnemies
 byte playerInvisible
 
 void main() {
+  //set up the music
+  FamiToneInit($00, nesthing_ost.addr)
+
   bulletSpeedAdder = 6
   bulletSpeedDivider = 1
   sprUpdateUpwards = true
@@ -141,6 +145,7 @@ void main() {
 }
 
 void nmi() {
+
   timer += 1
   //Push sprite information to the PPU through DMA transfer
   ppu_oam_dma_write(oam_buffer.addr.hi)
@@ -154,6 +159,7 @@ void nmi() {
 
   //Run graphics updates + game logic specific to each gamestate
   main_game_logic()
+  FamiToneUpdate()
 }
 
 void irq() { }
@@ -170,6 +176,7 @@ inline void main_game_logic() {
 }
 
 void game_title_init() {
+  FamiToneMusicPlay($00)
   byte i
   //for now, turn off the screen and nmi
   ppu_ctrl = 0
@@ -185,14 +192,25 @@ void game_title_init() {
   //write the title screen message
   read_ppu_status() // read PPU status to reset the high/low latch
   const array title_msg0 = "Roll Joins the POPO"
-  ppu_set_addr(ppu_nametable_ram+word(32)*10+(32-title_msg0.length)/2) // point the PPU to the message's start
+  ppu_set_addr(ppu_nametable_ram+word(32)*10+(33-title_msg0.length)/2) // point the PPU to the message's start
   for i,0,until,title_msg0.length {
     ppu_write_data(title_msg0[i])
   }
   const array title_msg = "PRESS START"
-  ppu_set_addr(ppu_nametable_ram+word(32)*12+(32-title_msg.length)/2) // point the PPU to the message's start
+  ppu_set_addr(ppu_nametable_ram+word(32)*12+(33-title_msg.length)/2) // point the PPU to the message's start
   for i,0,until,title_msg.length {
     ppu_write_data(title_msg[i])
+  }
+
+  const array title_msg2 = "(I don't own a house)"
+  ppu_set_addr(ppu_nametable_ram+word(18)*32+(33-title_msg2.length)/2) // point the PPU to the message's start
+  for i,0,until,title_msg2.length {
+    ppu_write_data(title_msg2[i])
+  }
+  const array title_msg3 = "(much less Roll or megaman)"
+  ppu_set_addr(ppu_nametable_ram+word(19)*32+(33-title_msg3.length)/2) // point the PPU to the message's start
+  for i,0,until,title_msg3.length {
+    ppu_write_data(title_msg3[i])
   }
 
   //write the border
@@ -254,12 +272,13 @@ vblankwait:
     ? RTS
 }
 
+const byte bulletSkip = 4
+
 byte enemyCount
 byte enemyTimer
 byte maxEnemiesAtOnce
 byte sorterI
 byte bulletTurn
-byte bulletSkip
 byte bulletBuffer
 byte bulletShotgun
 bool bulletSkipCooldown
@@ -267,27 +286,40 @@ byte ballBounce
 bool bulletPierce
 bool bulletPush
 bool bulletDecelerate
+byte rollThorns
+byte rollRegen
+byte rollMaxHp
+byte cooldownSkipped
 
 void gamePlayingInit() {
+  FamiToneMusicStop()
+
+  cooldownSkipped = 0
   sorterI = 0
   bulletTurn = 2
-  bulletSkip = 3
   playerInvisible = 100
-  rollHP = ROLLMAXHP
-  rollMaxBullets = 3
+  rollMaxHp = 10
+  rollHP = rollMaxHp
+  rollMaxBullets = 1
   destroyedEnemies = 0
   difficulty = 0
   maxEnemiesAtOnce = 3
   bulletBuffer = 0
   bulletShotgun = 1
   bulletSkipCooldown = true
-  ballBounce = 3
+  ballBounce = 0
   rollCooldown = 30
   bulletPierce = false
   bulletPush = true
   bulletDecelerate = true
+  //TODO apply this
+  rollThorns = 0
+  currentBullet = 0
+  score1 = 2
+  rollRegen = 0
   ppu_set_addr(ppu_pallete_ram) // point the PPU to palette ram
   ppu_write_data(pallete[0])
+
 
   byte i
   array ball_spr[TOTALBALLS*4] @ball_spr1.addr
@@ -443,7 +475,7 @@ void gamePlayingLogic() {
           enm->y.lo |= 3 //bounces
           enmSpr[enemyCount*4+1] = $06
         } else {
-          enm->x.lo = 1 //HP
+          enm->x.lo = 0 //HP
           enmSpr[enemyCount*4+1] = $07
         }
         enm->x.lo |= 1<<5 //isFollowy
@@ -465,6 +497,7 @@ void gamePlayingLogic() {
   movePlayer()
 
   updateSprites()
+  score2 = rollHP
   if input_start > 0 {
     if pauseCooldown == 0 {
       pauseCooldown = 1
@@ -693,8 +726,8 @@ void gamePlayingLogic() {
     bulletTurn = 0
   }
 
-  score2 = rollHP
   //score2 = bulletCount
+  //score2 = rollMaxBullets
 
   //ppu_mask = 0
   //ppu_set_addr(ppu_pallete_ram) // point the PPU to palette ram
@@ -772,8 +805,11 @@ void movePlayer() {
   prevB += input_b
   if cooldown > 0 {
     cooldown -= 1
-    if bulletSkipCooldown {
+    if cooldown == 0 {
+      cooldownSkipped = 0
+    } else if bulletSkipCooldown {
       if (prevA | prevB) & 15 == 0 {
+        cooldownSkipped = cooldown
         cooldown = 0
       }
     }
@@ -803,7 +839,58 @@ void movePlayer() {
         shat = true
       }
       if shat == true {
-        bulletBuffer = bulletShotgun
+        if bulletCount == rollMaxBullets-1 {
+          // default
+          currentBullet = 0
+        } else if cooldownSkipped>0 {
+          // quick
+          currentBullet = 1
+        } else {
+          // slow
+          if bulletShotgun > 1 {
+            currentBullet = 2
+          } else {
+            currentBullet = 1
+          }
+        }
+        if currentBullet == 0 { //punch
+          bulletBuffer = 1
+          bulletDecelerate = true
+          ballBounce = 1
+          bulletPush = true
+          bulletPierce = false
+
+          //FamiToneMusicPlay($00)
+
+        } else if currentBullet == 1 { //bullet
+          bulletBuffer = 1
+          bulletDecelerate = false
+          ballBounce = 0
+          bulletPush = false
+          bulletPierce = false
+        } else if currentBullet == 2 { //shotgun
+          shatx *= 2
+          shaty *= 2
+          bulletBuffer = bulletShotgun
+          //if bulletBuffer+bulletCount >= rollMaxBullets-1 {
+          //  if rollMaxBullets > bulletCount-1
+          //    { bulletBuffer = rollMaxBullets - bulletCount-1 }
+          //  else
+          //    { bulletBuffer = 0 }
+          //}
+          bulletDecelerate = true
+          ballBounce = 0
+          bulletPush = false
+          bulletPierce = false
+        } else if currentBullet == 3 { //superPunch
+          shatx *= 2
+          shaty *= 2
+          bulletBuffer = 1
+          bulletDecelerate = true
+          ballBounce = 0
+          bulletPierce = true
+          bulletPush = true
+        }
       }
     }
     if bulletBuffer > 0 {
@@ -811,9 +898,6 @@ void movePlayer() {
       shootBall(poinBall, rollx, rolly, shatx, shaty)
       bulletCount += 1
       bulletBuffer -= 1
-      if bulletBuffer == 0 {
-        cooldown = rollCooldown
-      }
       poinBall->x.lo = 1
       poinBall->y.lo |= ballBounce
       if bulletPierce == true {
@@ -827,15 +911,23 @@ void movePlayer() {
         poinBall->speedx *= 2
         poinBall->speedy *= 2
       }
-
-      shatx += (rand() & 7) - 4
-      shaty += (rand() & 7) - 4
+      if currentBullet == 2 {
+        shatx += (rand() & %111) - %11
+        shaty += (rand() & %111) - %11
+      }
+      if bulletBuffer == 0 {
+        cooldown = rollCooldown
+          currentBullet += 1
+        if currentBullet > 3 {
+          currentBullet = 1
+        }
+      }
     }
   }
 
   prevA *= 2
   prevB *= 2
-  paddle2ytop = bls[0].y.hi - 8
+  //paddle2ytop = bls[0].y.hi - 8
 }
 
 void check_paddle_collision(pointer.Ball ball) {
@@ -864,7 +956,7 @@ inline void load_sky_background() {
   word xx
   read_ppu_status() // read PPU status to reset the high/low latch
   ppu_set_addr(ppu_nametable_ram) // point the PPU to palette ram
-  for xx,0,until,$0400 {
+  for xx,0,until,$0800 {
     ppu_write_data(' ') // $00 = sky
   }
 }
@@ -952,7 +1044,7 @@ void game_init() {
   //Set initial paddle states
   rollx = 127
   rolly = 127
-  paddle2ytop = $70
+  //paddle2ytop = $70
   prevA = 0
   prevB = 0
 }
@@ -1104,22 +1196,27 @@ void updateSprites() {
 inline void drawScore() {
   byte digit01
   byte digit10
+  byte digit100
   read_ppu_status() // read PPU status to reset the high/low latch
 
   //display player1's score
   digit01 = score1 %% 10 //get the ones digit
   digit10 = score1 / 10  //get the tens digit
+  digit100 = score1 / 100  //get the tens digit
   digit10 %%= 10
+  digit100 %%= 100
 
   ppu_set_addr(ppu_nametable_ram+$29) // point the PPU to player1's score number
+  ppu_write_data(digit100 + '0')
   ppu_write_data(digit10 + '0')
   ppu_write_data(digit01 + '0')
 
   ppu_set_addr(ppu_nametable_ram+$420+$3C)
+  ppu_write_data(digit100 + '0')
   ppu_write_data(digit10 + '0')
   ppu_write_data(digit01 + '0')
 
-  //display player2's score
+  //display score2
   digit01 = score2 %% 10 //get the ones digit
   digit10 = score2 / 10  //get the tens digit
   digit10 %%= 10
@@ -1128,6 +1225,9 @@ inline void drawScore() {
   ppu_write_data(digit10 + '0')
   ppu_write_data(digit01 + '0')
 
+  ppu_set_addr(ppu_nametable_ram+$400+$40+$3) // point the PPU to player2's score number
+  ppu_write_data(digit10 + '0')
+  ppu_write_data(digit01 + '0')
 }
 
 
@@ -1135,8 +1235,8 @@ inline void drawScore() {
 
 //palletes for entire game (both title and play screens)
 const array pallete = [
-  $2e,$12,$28,$20, $22,$12,$28,$20, $22,$12,$28,$20, $22,$12,$28,$20, //background palette
-  $22,$12,$28,$20, $22,$12,$28,$20, $22,$12,$28,$20, $22,$12,$28,$20  //sprite palette
+  $2e,$12,$28,$20, $2e,$12,$28,$20, $2e,$12,$28,$20, $2e,$12,$28,$20, //background palette
+  $2e,$12,$28,$20, $2e,$12,$28,$20, $2e,$12,$28,$20, $2e,$12,$28,$20  //sprite palette
 ]
 
 //attribute table for play screen graphics
@@ -1144,3 +1244,8 @@ const array pallete = [
 //  *CHARACTER ROM (GRAPHICS)*
 segment(chrrom) const array graphicsSprites @ $0000 = file("roll spr tiles.chr")
 segment(chrrom) const array graphicsBackground @ $1000 = file("roll bg tiles.chr")
+
+//change @$CAC0 to whatever address you compiled your songs to,
+//usually @$8AC0 if you changed famitone5.bin to start at $8000
+const array nesthing_ost @$CAC0 = file("music.bin")
+//const array nesthing_ost_samples = file("samples.bin")
