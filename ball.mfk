@@ -111,7 +111,7 @@ void shootBall(pointer.Ball ball, byte x,byte y, sbyte spdx, sbyte spdy) {
 }
 
 byte bouncesLeft(pointer.Ball ball) {
-  return ball.y.lo & 3
+  return ball.y.lo & %11
 }
 
 bool isBouncy(pointer.Ball ball){
@@ -122,10 +122,7 @@ bool isBouncy(pointer.Ball ball){
 }
 
 bool isFollowy(pointer.Ball ball) {
-  if ball->x.lo & (1<<5) > 0 {
-    return true
-  }
-  return false
+  return (ball->x.lo & enemyIsFollowX > 0)
 }
 
 bool isSlow(pointer.Ball ball) {

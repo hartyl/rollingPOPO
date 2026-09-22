@@ -258,7 +258,7 @@ void placeOnSocket(byte x, byte y, byte a) {
     ppu_write_data(socketTile[i*4+2])
     ppu_write_data(socketTile[i*4+3])
     socketOwner[id+j] = (id+socketCell[0])|128
-    //sockets[getRow(y,j/8)] &= (-1)-POWS2[7- ((x-PAUSELEFTWALL)/2+(j&7))]
+    sockets[getRow(y,j)] &= (-1)-POWS2[7- ((x-PAUSELEFTWALL)/2+(j&7))]
   }
   socketOwner[id+socketCell[0]] = 64+128 + a
   ppu_wait_vblank()
@@ -278,7 +278,7 @@ byte removeFromSocket(byte x, byte y) {
     //TODO make this coordinate relative to origin
     x = ((id & %111))*2+PAUSELEFTWALL
     y = ((id/8) & %111)*2+PAUSETOPWALL
-    id = socketOwner[((y-PAUSETOPWALL)/2)*8 + ((x-PAUSELEFTWALL)/2)] // get pointed id
+    id = socketOwner[((y-PAUSETOPWALL)&(-2))*4 + ((x-PAUSELEFTWALL)/2)] // get pointed id
   }
   byte a
   a = id & %111111 // lower part (id)
@@ -286,32 +286,32 @@ byte removeFromSocket(byte x, byte y) {
   socketCell = socketCells[a]
   read_ppu_status()
   byte origin
-  origin = (((y-PAUSETOPWALL)/2)*8 + ((x-PAUSELEFTWALL)/2)) - socketCell[0]
+  origin = ((y-PAUSETOPWALL)&(-2))*4 + (x-PAUSELEFTWALL)/2 - socketCell[0]
+  byte oy
+  oy = ((origin/8) & %111)*2+PAUSETOPWALL
   for i,0,until,socketCellsLengths[a] {
     j = socketCell[i]
     //TODO make a custom printable chip
     //TODO set color for backgroundchip
-    ppu_set_addr(ppu_nametable_ram+$400+word(y+(word(j)/8)*2) * 32+ x+(word(j)&7)*2)
-    ppu_write_data('.')
-    ppu_write_data(' ')
-    ppu_set_addr(ppu_nametable_ram+$400+word(y+(word(j)/8)*2+1) * 32+ x+(word(j)&7)*2)
-    ppu_write_data(' ')
-    ppu_write_data('.')
+    //ppu_set_addr(ppu_nametable_ram+$400+word(y+(word(j)/8)*2) * 32+ x+((j+(origin))&7)*2)
+    //ppu_write_data('.')
+    //ppu_write_data(' ')
+    //ppu_set_addr(ppu_nametable_ram+$400+word(y+(word(j)/8)*2+1) * 32+ x+((j+(origin))&7)*2)
+    //ppu_write_data(' ')
+    //ppu_write_data('.')
     socketOwner[origin+j] = 128
-    sockets[(y-PAUSETOPWALL)/2 + j/8] |= POWS2[7- ((j&7)+(x-PAUSELEFTWALL)/2)]
+    sockets[getRow(y,j)] |= POWS2[7 - (((j+origin)&7))]
   }
-  ppu_wait_vblank()
   ppu_mask = %00011000
+  drawChip('.')
+  ppu_wait_vblank()
   ppu_ctrl = %10010000
   return id
 }
 
 byte wantedMaxBullets
-byte totalGuns
 
 void drawChip(byte color) {
-  wantedMaxBullets = 1
-  totalGuns = 0
   ppu_ctrl = %0
   ppu_mask = %0
   byte j
@@ -319,11 +319,11 @@ void drawChip(byte color) {
   byte dig
   for j,PAUSETOPWALL,until,PAUSEBOTTOMWALL {
     ppu_set_addr(ppu_nametable_ram+$400+word(j) * 32+ PAUSELEFTWALL)
-    if j&1>0  {
+    if j&1 > 0 {
       for i,0,until,(PAUSERIGHTWALL-PAUSELEFTWALL)/2 {
-        if socketOwner[((j-PAUSETOPWALL)/2)*8+i] == 128 {
+        //if socketOwner[((j-PAUSETOPWALL)/2)*8+i] == 128 {
         //if socketOwner[((j-PAUSETOPWALL)/2)*8+i] & 64 > 0 {
-        //if sockets[(j-PAUSETOPWALL)/2] & POWS2[7-i] > 0 {
+        if sockets[(j-PAUSETOPWALL)/2] & POWS2[7-i] > 0 {
           ppu_write_data(' ')
           ppu_write_data(color)
         } else {
@@ -332,8 +332,8 @@ void drawChip(byte color) {
       }
     } else {
       for i,0,until,(PAUSERIGHTWALL-PAUSELEFTWALL)/2 {
-        if socketOwner[((j-PAUSETOPWALL)/2)*8+i] == 128 {
-        //if sockets[(j-PAUSETOPWALL)/2] & POWS2[7-i] > 0 {
+        //if socketOwner[((j-PAUSETOPWALL)/2)*8+i] == 128 {
+        if sockets[(j-PAUSETOPWALL)/2] & POWS2[7-i] > 0 {
           ppu_write_data(color)
           ppu_write_data(' ')
         } else {
@@ -533,7 +533,7 @@ void drawPauseMenu() {
   cursorY = 127
   byte i
   for i,0,until,8 {
-    sockets[i] = chipX[i]
+    sockets[i] = chipFull[i]
   }
   for i:socketOwner {
     if sockets[i/8] & POWS2[7-(i&7)] > 0 {
