@@ -1,7 +1,10 @@
 const byte PAUSETOPWALL     = 8//128/8-8
-const byte PAUSELEFTWALL    = 8//128/8-4
+const byte PAUSELEFTWALL    = 12//128/8-4
 const byte PAUSERIGHTWALL   = PAUSELEFTWALL+8*2
 const byte PAUSEBOTTOMWALL  = PAUSETOPWALL+8*2
+
+const byte PREVIEWLEFT = 2
+const byte PREVIEWTOP = 8
 
 const array chipStarter = [
   %11110000,
@@ -109,7 +112,7 @@ const array heartMissingWarning = "WARNING: NO HEART!"
 void heartPut() {
   heartX = (cursorX)/8&(-2)
   heartY = (cursorY)/8&(-2)
-  ppu_set_addr(ppu_nametable_ram+$400+32*2+2)
+  ppu_set_addr(ppu_nametable_ram+$400+32*word(PAUSEBOTTOMWALL+1)+(PAUSELEFTWALL-1))
   byte i
   for i:heartMissingWarning {
     ppu_write_data(' ')
@@ -123,7 +126,7 @@ void heartPull() {
   ppu_set_addr(ppu_nametable_ram+$400+word(heartY+2) * 32+ heartX+1)
   ppu_write_data(' ')
   ppu_write_data('.')
-  ppu_set_addr(ppu_nametable_ram+$400+32*2+2)
+  ppu_set_addr(ppu_nametable_ram+$400+32*word(PAUSEBOTTOMWALL+1)+(PAUSELEFTWALL-1))
   byte i
   for i,0,until,heartMissingWarning.length {
     ppu_write_data(heartMissingWarning[i])
@@ -204,12 +207,18 @@ $82, $83
 ]
 
 void gun1Put() {
-  wantedMaxBullets += 3
-  bulletShotgun += 3
+  if rollCooldown2 == 128 {
+    wantedMaxBullets += 3
+    bulletShotgun += 3
+  }
+  rollCooldown2 /= 2
 }
 void gun1Pull() {
-  wantedMaxBullets -= 3
-  bulletShotgun -= 3
+  if rollCooldown2 == 64 {
+    wantedMaxBullets += 3
+    bulletShotgun += 3
+  }
+  rollCooldown2 *= 2
 }
 
 void gun2Put() {
@@ -223,15 +232,25 @@ void gun2Pull() {
 array(Sprite) spr [16] @0x228
 
 array socketOwner[8*8]
-byte heartX
-byte heartY
+byte heartX, heartY
 
 const array(pointer) socketCells =              [heartSocketCells,       blasterSocketCells,        energySocketCells,        bubbleWrapCells,        spikesCells,        Cells2x1,         gunCells,        gunCells         ]
 const array(pointer) socketTiles =              [heartSocketTiles,       blasterSocketTiles,        energySocketTiles,        bubbleWrapTiles,        spikesTiles,        doubleHeartTiles, gunTiles,        gunTiles         ]
 const array(function.void.to.void) socketPut =  [heartPut,               blasterPut,                energyPut,                bubbleWrapPut,          spikesPut,          doubleHeartPut,   gun1Put,         gun2Put          ]
 const array(function.void.to.void) socketPull = [heartPull,              blasterPull,               energyPull,               bubbleWrapPull,         spikesPull,         doubleHeartPull,  gun1Pull,        gun2Pull         ]
 const array socketCellsLengths =                [heartSocketCells.length,blasterSocketCells.length, energySocketCells.length, bubbleWrapCells.length, spikesCells.length, Cells2x1.length,  gunCells.length, gunCells.length-1]
+byte i
+//const array socketCellsLengths = [for i,0,until,socketCells.length [socketCells[i]->length]]
 const array prices =                            [0,                      2,                         5,                        1,                      8,                  4,                20,              15               ]
+const array text0 = "heart"z
+const array text1 = "blaster"z
+const array text2 = "energy"z
+const array text3 = "bubbleWrap"z
+const array text4 = "spikes"z
+const array text5 = "doubleHeart"z
+const array text6 = "shotgun"z
+const array text7 = "gun"z
+const array(pointer) socketNames =              [text0,                  text1,                     text2,                    text3,                  text4,              text5,            text6,           text7            ]
 
 byte getRow(byte y, byte j) {
   return (y-PAUSETOPWALL)/2 + j/8
@@ -385,6 +404,31 @@ void debugChip() {
 }
 
 array sockets [8]
+
+void drawPrice(byte price) {
+  byte digit01, digit10
+  digit01 = price %% 10 //get the ones digit
+  digit10 = price / 10  //get the tens digit
+  digit10 %%= 10
+  ppu_set_addr(ppu_nametable_ram+$400+10*$20+$3) // point the PPU to player2's score number
+  ppu_write_data(digit10 + '0')
+  ppu_write_data(digit01 + '0')
+  ppu_write_data('$')
+}
+void drawPriceTag() {
+  byte j
+  ppu_set_addr(ppu_nametable_ram+$400+32*word(PAUSETOPWALL+1)+(1))
+  j = 0
+  while socketNames[selected][j] != 0 {
+    ppu_write_data(socketNames[selected][j])
+    j+=1
+  }
+  while j < 11 {
+    ppu_write_data(' ')
+    j+=1
+  }
+}
+
 void gamePauseInit() {
   byte i
   array sprsDelete[252] @$200
@@ -393,8 +437,7 @@ void gamePauseInit() {
     sprsDelete[i] = -1
     i+=4
   }
-  score2 = prices[selected]
-  drawScore()
+  drawPrice(prices[selected])
   ppu_set_scroll(255,0)
 }
 
@@ -414,6 +457,7 @@ void gamePauseLogic() {
   prevA += input_select & timer.lo & 1
   prevB += input_b
   byte i
+  word w
   byte j
   bool condition
   byte cX
@@ -455,32 +499,35 @@ void gamePauseLogic() {
       id = removeFromSocket(cX*2+PAUSELEFTWALL,cY*2+PAUSETOPWALL)
       if id > 0 {
         call(socketPull[id & %111111])
-        score1 += prices[id & %111111]
+        if score1 + prices[id & %111111] > score1 {
+          score1 += prices[id & %111111]
+        } else {
+          score1 = 255
+        }
         drawScore()
         rollMaxBullets = wantedMaxBullets
         if rollMaxBullets > TOTALBALLS { rollMaxBullets = TOTALBALLS }
       }
     }
   } else if prevA == %010 {
-    if input_select == 0 {
-      selected += 1
-      if selected >= socketCellsLengths.length {
-        selected = 0
-      }
-      score2 = prices[selected]
-      for i,0,until,8 { spr[i].y = -1 }
-      drawScore()
-    } else {
-      drawChip(rand()&7)
+    ppu_set_addr(ppu_nametable_ram+$400+32*word(PAUSETOPWALL+1)+(2))
+    selected += 1
+    if selected >= socketCellsLengths.length {
+      selected = 0
     }
+    drawPrice(prices[selected])
+    for i,0,until,8 { spr[i].y = -1 }
+
+    drawPriceTag()
+
   } else if prevB == %010 {
     if selected == 0 {
       selected = socketCellsLengths.length
     }
     selected -= 1
-    score2 = prices[selected]
-    drawScore()
+    drawPrice(prices[selected])
     for i,0,until,8 { spr[i].y = -1 }
+    drawPriceTag()
   }
   cX = (cursorX)&(-16)
   cY = (cursorY)&(-16)

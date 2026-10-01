@@ -128,10 +128,10 @@ Sprite enemy_spr0 @ball_spr1.addr + TOTALBALLS*sizeof(ball_spr1)
 
 word timer   // counts the amount of frames that have passed
 
-array(Ball) bls [TOTALBALLS]
+array(Ball) bls [TOTALBALLS] align(fast)
 byte bulletCount
 
-array(Ball) enms [TOTALENEMIES]
+array(Ball) enms [TOTALENEMIES] align(fast)
 
 //TODO
 array(byte) spares [(BOTTOMWALL/8)*4]//[((RIGHTWALL-LEFTWALL)/8)*((BOTTOMWALL-TOPWALL)/8)]
@@ -148,7 +148,8 @@ byte playerInvisible
 
 void main() {
   //set up the music
-  FamiToneInit($00, nesthing_ost.addr)
+  FamiToneInit(1, nesthing_ost.addr)
+  FamiToneSfxInit(twin_dragons_sfx.addr)
 
   bulletSpeedAdder = 6
   bulletSpeedDivider = 1
@@ -175,7 +176,10 @@ void nmi() {
 
   //Run graphics updates + game logic specific to each gamestate
   main_game_logic()
+  //TODO do something with this
   FamiToneUpdate()
+  if timer.lo & 0 == 0 {
+  }
 }
 
 void irq() { }
@@ -192,7 +196,8 @@ inline void main_game_logic() {
 }
 
 void game_title_init() {
-  FamiToneMusicPlay($00)
+  //FamiToneMusicPlay($00)
+  FamiToneSfxPlay(0,FT_SFX_CH0)
   byte i
   //for now, turn off the screen and nmi
   ppu_ctrl = 0
@@ -310,6 +315,8 @@ byte rollCooldown2
 
 void gamePlayingInit() {
   FamiToneMusicStop()
+  //FamiToneSfxPlay(3,FT_SFX_CH0)
+  FamiToneMusicPlay(0)
 
   wantedMaxBullets = 1
   cooldownSkipped = 0
@@ -328,14 +335,13 @@ void gamePlayingInit() {
   bulletSkipCooldown = true
   ballBounce = 0
   rollCooldown = 30
-  rollCooldown2 = 50
+  rollCooldown2 = 128
   bulletPierce = false
   bulletPush = true
   bulletDecelerate = true
-  //TODO apply this
   rollThorns = 0
   currentBullet = 0
-  score1 = 40
+  score1 = 200
   rollRegen = 0
   ppu_set_addr(ppu_pallete_ram) // point the PPU to palette ram
   ppu_write_data(pallete[0])
@@ -435,7 +441,9 @@ void gamePlayingLogic() {
     xx ^= -1
     spares[index] &= xx
     printAtPosition(rollx+4,rolly+8,' ')
-    score1+=1
+    if score1 < 255 {
+      score1 += 1
+    }
   }
 
   pointer.Ball dedEnemy
@@ -913,7 +921,7 @@ void movePlayer() {
               currentBullet = 2
               cooldownShotgun = rollCooldown2
             } else {
-              currentBullet = 0
+              currentBullet = 1
             }
           } else {
             currentBullet = 1
@@ -921,9 +929,15 @@ void movePlayer() {
         }
         if currentBullet == 0 { //punch
           bulletBuffer = 1
-          //FamiToneMusicPlay($00)
           modifier.lo = 1
           modifier.hi = 1 | bulletPushY | bulletDecelerateY
+          //FamiToneSfxPlay(10,FT_SFX_CH0)
+          //FamiToneSfxPlay(15,FT_SFX_CH0)
+          //FamiToneSfxPlay(16,FT_SFX_CH0)// electroshock
+          //FamiToneSfxPlay(18,FT_SFX_CH0) //annoying
+          FamiToneSfxPlay(19,FT_SFX_CH0) //punch
+          //FamiToneSfxPlay(0,FT_SFX_CH0)
+          //FamiToneMusicPlay(0)
         } else if currentBullet == 1 { //bullet
           if bulletCount < rollMaxBullets {
             bulletBuffer = 1
@@ -1275,10 +1289,6 @@ inline void drawScore() {
   ppu_set_addr(ppu_nametable_ram+$5C) // point the PPU to player2's score number
   ppu_write_data(digit10 + '0')
   ppu_write_data(digit01 + '0')
-
-  ppu_set_addr(ppu_nametable_ram+$400+$60+$3) // point the PPU to player2's score number
-  ppu_write_data(digit10 + '0')
-  ppu_write_data(digit01 + '0')
 }
 
 
@@ -1299,4 +1309,5 @@ segment(chrrom) const array graphicsBackground @ $1000 = file("roll bg tiles.chr
 //change @$CAC0 to whatever address you compiled your songs to,
 //usually @$8AC0 if you changed famitone5.bin to start at $8000
 const array nesthing_ost @$CAC0 = file("music.bin")
-//const array nesthing_ost_samples = file("samples.bin")
+//const array nesthing_ost_samples @$8AC0 = file("samples.bin")
+const array twin_dragons_sfx @$ee00 = file("sfx.bin")
