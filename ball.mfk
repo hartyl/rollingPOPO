@@ -100,6 +100,10 @@ bool moveBall(pointer.Ball ball) {
   speedy.lo &= %11000000
   ball->x += speedx
   ball->y += speedy
+  if ball->x.lo & bulletBigX > 0 {
+    ball->x.hi += (2 - ((timer.lo+1) & 2)) * 4 - 4
+    ball->y.hi += (2 - (timer.lo & 2)) * 4 - 4
+  }
   return active
 }
 
@@ -126,12 +130,17 @@ bool isFollowy(pointer.Ball ball) {
 }
 
 bool isSlow(pointer.Ball ball) {
-  if ball->x.lo & (1<<3) > 0 {
+  if ball->y.lo & bulletDecelerateY > 0 {
     return true
+  } else {
+    return false
   }
-  return false
+}
+
+byte getHP(pointer.Ball ball) {
+  return ball->x.lo & %111;
 }
 
 void setHP(pointer.Ball ball, byte amount) {
-  ball->x.lo = amount
+  ball->x.lo = amount;
 }
