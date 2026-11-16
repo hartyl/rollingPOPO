@@ -30,8 +30,8 @@ struct playerSpr {
 
 // *CONSTANTS*
 
-const byte TOTALBALLS = 25
-const byte TOTALENEMIES = 6
+const byte TOTALBALLS = 22 //TODO this is maybe too much
+const byte TOTALENEMIES = 8
 const byte ENEMYTIMER = 120
 const byte ENEMYSPEED = 2
 
@@ -72,7 +72,7 @@ const byte ROLLSPRATTRHVFLIP = $C1
 
 // sprite tiles and attributes used by the ball
 const byte BALLSPRATTR = $01
-const byte BALLSPR = $03
+const byte BALLSPR = $34
 const byte ENEMYSPR = $02
 const byte gravity = 0
 
@@ -97,9 +97,12 @@ import ball
 
 // *VARIABLES*
 
-byte rollx
-byte rolly
+word rollx
+word rolly
+word rollSpdx
+word rollSpdy
 byte rollSpd
+byte rollMaxSpeed
 byte rollDef
 bool rollRight
 byte rollHP
@@ -328,7 +331,8 @@ byte rollCooldown2
 
 void gamePlayingInit() {
   score1 = 255
-  rollSpd = 1
+  rollMaxSpeed = 1
+  rollSpd = 20
   bubbleBuffer = 0
   rollDef = 0
   FamiToneMusicStop()
@@ -399,6 +403,8 @@ void gamePlayingInit() {
   load_play_attribute_table()
 
   drawPauseMenu()
+  gamePauseCreate()
+
   //initialize the game
   game_init()
 
@@ -446,14 +452,14 @@ void gamePlayingLogic() {
   //printAtPosition(balls[0]->x.hi,balls[0]->y.hi)
 
   byte xx
-  xx = POWS2[((rollx+4)/8) & 7]
+  xx = POWS2[((rollx.hi+4)/8) & 7]
   byte index
-  index = getSpareIndex(rollx+4,rolly+8)
+  index = getSpareIndex(rollx.hi+4,rolly.hi+8)
   byte r
   if spares[index] & xx != 0 {
     xx ^= -1
     spares[index] &= xx
-    printAtPosition(rollx+4,rolly+8,' ')
+    printAtPosition(rollx.hi+4,rolly.hi+8,' ')
     r = rand() & %11111
     if score1 < 255 {
       score1 += 1
@@ -513,28 +519,76 @@ void gamePlayingLogic() {
           } else {
             enm->speedy /= 2
           }
-          enmSpr[enemyCount*4+1] = $08
+          enmSpr[(0+enemyCount*4)*4+1] = $0B
+          enmSpr[(1+enemyCount*4)*4+1] = $0C
+          enmSpr[(2+enemyCount*4)*4+1] = $1B
+          enmSpr[(3+enemyCount*4)*4+1] = $1C
+          enmSpr[(0+enemyCount*4)*4+2] = %00000000
+          enmSpr[(1+enemyCount*4)*4+2] = %00000000
+          enmSpr[(2+enemyCount*4)*4+2] = %00000000
+          enmSpr[(3+enemyCount*4)*4+2] = %00000000
         } else {
           enm->x.lo = 2 //HP
-          enmSpr[enemyCount*4+1] = $05
+          enmSpr[(0+enemyCount*4)*4+1] = $05
+          enmSpr[(1+enemyCount*4)*4+1] = $24
+          enmSpr[(2+enemyCount*4)*4+1] = $15
+          enmSpr[(3+enemyCount*4)*4+1] = $16
+          enmSpr[(0+enemyCount*4)*4+2] = %00000000
+          enmSpr[(1+enemyCount*4)*4+2] = %00000000
+          enmSpr[(2+enemyCount*4)*4+2] = %00000000
+          enmSpr[(3+enemyCount*4)*4+2] = %00000000
         }
       } else {
         //bouncy enemy
         if difficulty > 5 && rand()>150-difficulty {
           enm->x.lo = 2 //HP
           enm->y.lo |= 3 //bounces
-          enmSpr[enemyCount*4+1] = $06
+          enmSpr[(0+enemyCount*4)*4+1] = $07
+          enmSpr[(1+enemyCount*4)*4+1] = $24
+          enmSpr[(2+enemyCount*4)*4+1] = $17
+          enmSpr[(3+enemyCount*4)*4+1] = $18
+          enmSpr[(0+enemyCount*4)*4+2] = %00000000
+          enmSpr[(1+enemyCount*4)*4+2] = %00000000
+          enmSpr[(2+enemyCount*4)*4+2] = %00000000
+          enmSpr[(3+enemyCount*4)*4+2] = %00000000
         } else {
           enm->x.lo = 0 //HP
-          enmSpr[enemyCount*4+1] = $07
+          enmSpr[(0+enemyCount*4)*4+1] = $09
+          enmSpr[(1+enemyCount*4)*4+1] = $24
+          enmSpr[(2+enemyCount*4)*4+1] = $19
+          enmSpr[(3+enemyCount*4)*4+1] = $1A
+          enmSpr[(0+enemyCount*4)*4+2] = %00000000
+          enmSpr[(1+enemyCount*4)*4+2] = %00000000
+          enmSpr[(2+enemyCount*4)*4+2] = %00000000
+          enmSpr[(3+enemyCount*4)*4+2] = %01000000
         }
         enm->x.lo |= enemyIsFollowX //isFollowy
       }
       //TODO undo this
       if rand() > 20-difficulty {
         enm->y.lo |= bulletDecelerateY
-        enmSpr[enemyCount*4+1] += $10
+        //enmSpr[enemyCount*4*4+1] += $20
+        //enmSpr[enemyCount*4*4+1+4] += $20
+        //enmSpr[enemyCount*4*4+1+8] += $20
+        //enmSpr[enemyCount*4*4+1+12] += $20
       }
+//          enmSpr[(0+enemyCount*4)*4+1] = $0B
+//          enmSpr[(1+enemyCount*4)*4+1] = $0C
+//          enmSpr[(2+enemyCount*4)*4+1] = $1B
+//          enmSpr[(3+enemyCount*4)*4+1] = $1C
+          //enmSpr[(0+enemyCount*4)*4+1] = $07
+          //enmSpr[(1+enemyCount*4)*4+1] = $24
+          //enmSpr[(2+enemyCount*4)*4+1] = $17
+          //enmSpr[(3+enemyCount*4)*4+1] = $18
+          //enmSpr[(0+enemyCount*4)*4+1] = $05
+          //enmSpr[(1+enemyCount*4)*4+1] = $24
+          //enmSpr[(2+enemyCount*4)*4+1] = $15
+          //enmSpr[(3+enemyCount*4)*4+1] = $16
+          //enmSpr[(0+enemyCount*4)*4+1] = $09
+          //enmSpr[(1+enemyCount*4)*4+1] = $24
+          //enmSpr[(2+enemyCount*4)*4+1] = $19
+          //enmSpr[(3+enemyCount*4)*4+1] = $1a
+          //enmSpr[(3+enemyCount*4)*4+2] ^= %01000000
       enemyTimer = 1
       enemyCount += 1
     }
@@ -559,7 +613,7 @@ void gamePlayingLogic() {
   }
 
   i = 0
-  array ballSpr [TOTALBALLS*4]@ball_spr1.addr
+  array ballSpr [TOTALBALLS*4] @ball_spr1.addr
   bool active
   while i<bulletCount {
     active = moveBall(bls[i].pointer)
@@ -568,7 +622,7 @@ void gamePlayingLogic() {
       bls[i] = bls[bulletCount]
       ballSpr[4*bulletCount] = -1
     } else {
-      i = i+1
+      i += 1
     }
   }
   byte prevSorterI
@@ -616,7 +670,7 @@ void gamePlayingLogic() {
       moveBall(enm)
       // accelerates faster when:
       if ((isBouncy(enm)) && timer.lo & %1111 < 3) || timer.lo & %111 == 0 {
-        if enm->x.hi > rollx {
+        if enm->x.hi > rollx.hi {
           if enm->speedx > -8 {
             enm->speedx -= 1
           }
@@ -625,7 +679,7 @@ void gamePlayingLogic() {
             enm->speedx += 1
           }
         }
-        if enm->y.hi > rolly {
+        if enm->y.hi > rolly.hi {
           if enm->speedy > -8 {
             enm->speedy -= 1
           }
@@ -663,32 +717,42 @@ void gamePlayingLogic() {
         if enm->x.hi < bls[b].x.hi+12 {
           y = enm->y.hi - bls[b].y.hi
           if y+12 < 20 {
-            //damage enemy
-            if bls[b].y.lo & %1100 <= %100 { //dont damage if its still pearcing
-              if getHP(enm) >= getHP(bls[b].pointer) {
-                setHP(enm, getHP(enm) - getHP(bls[b].pointer))
-                if bls[b].y.lo & bulletPushY > 0 {
-                  if bls[b].speedx < 0 {
-                    enm->speedx += bls[b].speedx/4 | (128 | 64)
-                  } else {
-                    enm->speedx += bls[b].speedx/4
+            if enm->y.lo & bulletPierceY==0 {
+              //damage enemy
+              if bls[b].y.lo & %1100 <= %100 { //dont damage if its still pearcing
+                if getHP(enm) >= getHP(bls[b].pointer) {
+                  setHP(enm, getHP(enm) - getHP(bls[b].pointer))
+                  if bls[b].y.lo & bulletPushY > 0 {
+                    if bls[b].speedx < 0 {
+                      enm->speedx += bls[b].speedx/4 | (128 | 64)
+                    } else {
+                      enm->speedx += bls[b].speedx/4
+                    }
+                    if bls[b].speedy < 0 {
+                      enm->speedy += bls[b].speedy/4 | (128 | 64)
+                    } else {
+                      enm->speedy += bls[b].speedy/4
+                    }
                   }
-                  if bls[b].speedy < 0 {
-                    enm->speedy += bls[b].speedy/4 | (128 | 64)
-                  } else {
-                    enm->speedy += bls[b].speedy/4
-                  }
+                } else {
+                  enmActive = false
+                  destroyedEnemies += 1
+                  difficulty += 1
+                  maxEnemiesAtOnce = difficulty/16+3
+                  if maxEnemiesAtOnce > TOTALENEMIES
+                    {maxEnemiesAtOnce = TOTALENEMIES}
+                  maxEnemiesAtOnce = TOTALENEMIES
                 }
-              } else {
-                enmActive = false
-                destroyedEnemies += 1
-                difficulty += 1
-                maxEnemiesAtOnce = difficulty/16+3
-                if maxEnemiesAtOnce > TOTALENEMIES
-                  {maxEnemiesAtOnce = TOTALENEMIES}
+              }
+              //destroy bullet
+              //unless the enm is invincible
+            } else {
+              if bls[b].y.lo & 3 == 0 {
+                bls[b].y.lo |= 1 | bulletDecelerateY
+                bls[b].speedx *= 2
+                bls[b].speedy *= 2
               }
             }
-            //destroy bullet
             if bls[b].y.lo & (bulletPierceY | (bulletPierceY*2) | 3) == 0 {
               //destroy unless it bounces or pierces
               bulletCount -= 1
@@ -739,9 +803,9 @@ void gamePlayingLogic() {
     }
 
     if playerInvisible <= 1 {
-      x = enm->x.hi - rollx
+      x = enm->x.hi - rollx.hi
       if x+8 < 16 {
-        y = enm->y.hi - rolly
+        y = enm->y.hi - rolly.hi
         if y+8 < 16 {
           playerInvisible = 100
           rollHP -= 1
@@ -769,15 +833,25 @@ void gamePlayingLogic() {
 
       enms[i].speedx = enms[enemyCount].speedx
       enms[i].speedy = enms[enemyCount].speedy
-      enmSpr[i*4+1] = enmSpr[enemyCount*4+1]
-      enmSpr[i*4+2] = enmSpr[enemyCount*4+2]
+      enmSpr[i*4*4+1] = enmSpr[enemyCount*4*4+1]
+      enmSpr[i*4*4+2] = enmSpr[enemyCount*4*4+2]
+      enmSpr[i*4*4+1+4] = enmSpr[enemyCount*4*4+1+4]
+      enmSpr[i*4*4+2+4] = enmSpr[enemyCount*4*4+2+4]
+      enmSpr[i*4*4+1+8] = enmSpr[enemyCount*4*4+1+8]
+      enmSpr[i*4*4+2+8] = enmSpr[enemyCount*4*4+2+8]
+      enmSpr[i*4*4+1+12] = enmSpr[enemyCount*4*4+1+12]
+      enmSpr[i*4*4+2+12] = enmSpr[enemyCount*4*4+2+12]
 
       enms[i].x.lo = enms[enemyCount].x.lo
       enms[i].y.lo = enms[enemyCount].y.lo
       //swap = enms[i].HP
       //enms[i].HP = enms[enemyCount].HP
       //enms[enemyCount].HP = swap
-      spr[enemyCount*4] = -1
+      //spr[enemyCount*4*4] = -1
+      enmSpr[enemyCount*4*4] = -1
+      enmSpr[enemyCount*4*4+4] = -1
+      enmSpr[enemyCount*4*4+8] = -1
+      enmSpr[enemyCount*4*4+12] = -1
     }
   }
   bulletTurn += bulletSkip
@@ -834,27 +908,76 @@ void movePlayer() {
   //if timer.lo&7>0 {return}
   read_joy1()
   if input_dy < 0 {  // Up button
-    if rolly+8 > TOPWALL {
-      rolly -= rollSpd
+    //TODO weird drift
+    if rollSpdy.hi >= -rollMaxSpeed || rollSpdy.hi < 128 {
+      rollSpdy -= rollSpd
     }
-  }
-  else if input_dy > 0 { // Down button
-    if (rolly + ROLLHEIGHT) < BOTTOMWALL {
-      rolly += rollSpd
+  } else if input_dy > 0 { // Down button
+    if rollSpdy.hi < rollMaxSpeed || rollSpdy.hi > 127 {
+      rollSpdy += rollSpd
+    }
+  } else {
+    //stop
+    if rollSpdy.hi < 1 {
+      rollSpdy = 0
+    } else if rollSpdy.hi < 127 {
+      rollSpdy -= rollSpd
+    } else if rollSpdy.hi <= -1 {
+      rollSpdy += rollSpd
+    } else {
+      rollSpdy = 0
     }
   }
   if input_dx > 0 {
-    if rollx < RIGHTWALL-8 {
-      rollx += rollSpd
+    if rollx.hi < RIGHTWALL-8 {
+      if rollSpdx.hi < rollMaxSpeed || rollSpdx.hi > 127 {
+        rollSpdx += rollSpd
+      }
       rollRight = true
     }
   } else if input_dx < 0 {
-    if rollx > LEFTWALL {
-      rollx -= rollSpd
+    if rollx.hi > LEFTWALL {
+      //TODO too
+      if rollSpdx.hi >= -rollMaxSpeed || rollSpdx.hi < 128 {
+        rollSpdx -= rollSpd
+      }
       rollRight = false
+    }
+  } else {
+    if rollSpdx.hi < 1 {
+      rollSpdx = 0
+    } else if rollSpdx.hi < 127 {
+      rollSpdx -= rollSpd
+    } else if rollSpdx.hi <= -1 {
+        rollSpdx += rollSpd
+    } else {
+      rollSpdx = 0
+    }
+  }
+  if rolly.hi > TOPWALL && rolly.hi+8 < BOTTOMWALL {
+    rolly += rollSpdy
+  } else {
+    rollSpdy = 0
+    rolly.lo = 0
+    if rolly.hi < BOTTOMWALL {
+      rolly.hi = TOPWALL+1
+    } else {
+      rolly.hi = BOTTOMWALL-1-8
+    }
+  }
+  if rollx.hi > LEFTWALL && rollx.hi+8 < RIGHTWALL {
+    rollx += rollSpdx
+  } else {
+    rollSpdx = 0
+    rollx.lo = 0
+    if rollx.hi < RIGHTWALL-8 {
+      rollx.hi = LEFTWALL + 1
+    } else {
+      rollx.hi = RIGHTWALL -8 - 1
     }
   }
   byte pA
+  byte shatD
   pointer.Ball poinBall
   bool shat
   prevA += input_a
@@ -880,25 +1003,25 @@ void movePlayer() {
       shat = false
       modifier = 0
       if pA == %111 {
-        shatx = input_dx+bulletSpeedAdder
-        shaty = input_dy+bulletSpeedAdder
+        shatx = rollSpdx.hi+bulletSpeedAdder
+        shaty = rollSpdy.hi+bulletSpeedAdder
         shat = true
       } else if pA == %010 {
-        shatx = input_dx+bulletSpeedAdder
-        shaty = input_dy-bulletSpeedAdder
+        shatx = rollSpdx.hi+bulletSpeedAdder
+        shaty = rollSpdy.hi-bulletSpeedAdder
         shat = true
       }
       pA = prevB & %111
       if pA == %111 {
-        shatx = input_dx-bulletSpeedAdder
-        shaty = input_dy+bulletSpeedAdder
+        shatx = rollSpdx.hi-bulletSpeedAdder
+        shaty = rollSpdy.hi+bulletSpeedAdder
         shat = true
       } else if pA == %010 {
-        shatx = input_dx-bulletSpeedAdder
-        shaty = input_dy-bulletSpeedAdder
+        shatx = rollSpdx.hi-bulletSpeedAdder
+        shaty = rollSpdy.hi-bulletSpeedAdder
         shat = true
       }
-      if shat == true {
+      if shat {
         if cooldownSkipped > 0 || bulletCount+bulletShotgun >= rollMaxBullets-1 {
           // default
           // slow
@@ -968,7 +1091,7 @@ void movePlayer() {
     }
     if bulletBuffer > 0 {
       poinBall = bls[bulletCount].pointer
-      shootBall(poinBall, rollx, rolly, shatx, shaty)
+      shootBall(poinBall, rollx.hi, rolly.hi, shatx, shaty)
       bulletCount += 1
       bulletBuffer -= 1
       poinBall->x.lo = modifier.lo
@@ -981,8 +1104,30 @@ void movePlayer() {
         poinBall->speedy *= 2
       }
       if currentBullet == 2 {
-        shatx += (rand() & %111) - %11
-        shaty += (rand() & %111) - %11
+        shatD = (rand() & %111) - %11
+        if shatx > 0 {
+          shatx += shatD
+          if shatx <= 0 {
+            shatx = -shatx
+          }
+        } else {
+          shatx += shatD
+          if shatx > 0 {
+            shatx = -shatx
+          }
+        }
+        shatD = (rand() & %111) - %11
+        if shaty > 0 {
+          shaty += shatD
+          if shaty <= 0 {
+            shaty = -shaty
+          }
+        } else {
+          shaty += shatD
+          if shaty > 0 {
+            shaty = -shaty
+          }
+        }
       }
       if bulletBuffer == 0 {
         if bubbleBuffer & 128 == 0 {
@@ -1113,8 +1258,8 @@ void game_init() {
   //Set some initial ball stats
 
   //Set initial paddle states
-  rollx = 127
-  rolly = 127
+  rollx.hi = 127
+  rolly.hi = 127
   //paddle2ytop = $70
   prevA = 0
   prevB = 0
@@ -1148,10 +1293,54 @@ void updateSprites() {
 
   array spr [128]@enemy_spr0.addr
   i=0
+  j=0
   while i < enemyCount {
-    spr[0+4*i] = enms[i].y.hi
-    spr[3+4*i] = enms[i].x.hi
+    spr[0+j] = enms[i].y.hi
+    spr[3+j] = enms[i].x.hi
+    if spr[1+j] == $0B {
+      spr[0+j+4] = enms[i].y.hi-4
+    } else {
+      spr[0+j+4] = enms[i].y.hi
+    }
+    spr[3+j+4] = enms[i].x.hi+8
+    if spr[1+j] == $07 {
+      if spr[2+j] & %01000000 == 0 {
+        spr[3+j] = enms[i].x.hi+1
+      } else {
+        spr[3+j] = enms[i].x.hi-1
+      }
+      spr[0+j+4] = enms[i].y.hi+2
+    }
+    spr[0+j+8] = enms[i].y.hi+8
+    spr[3+j+8] = enms[i].x.hi
+    spr[0+j+12] = enms[i].y.hi+8
+    spr[3+j+12] = enms[i].x.hi+8
+    if (timer.lo + i) & %11111 == 0 {
+      if spr[1+j] == $07 {
+        spr[1+j] += $1
+      } else if spr[1+j] == $08 {
+        spr[1+j] -= $1
+        spr[2+j] ^= %01000000
+      } else if spr[1+j] == $09 {
+        spr[1+j] += $1
+        spr[1+j+8] += $1
+        spr[1+j+12] -= $1
+      } else if spr[1+j] == $0A {
+        spr[1+j] -= $1
+        spr[1+j+8] -= $1
+        spr[1+j+12] += $1
+      } else if spr[1+j+8] == $15 {
+        spr[1+j+8] = $06
+        enms[i].y.lo |= bulletPierceY
+        enms[i].y.hi += 2
+      } else if spr[1+j+8] == $06 {
+        spr[1+j+8] = $15
+        enms[i].y.lo &= (-1)-bulletPierceY
+        enms[i].y.hi -= 2
+      }
+    }
     i += 1
+    j += 16
   }
 
   //update paddle sprites
@@ -1159,7 +1348,7 @@ void updateSprites() {
   // update body of PLAYER
   if playerInvisible > 1 {playerInvisible -= 1}
   if (playerInvisible & 3) > 0 {
-    rollSpr.head.y = rolly - 8
+    rollSpr.head.y = rolly.hi - 8
     rollSpr.head.tile = ROLLTOPBOTSPR
     if rollRight {
       rollSpr.head.attrs = ROLLSPRATTR
@@ -1172,12 +1361,12 @@ void updateSprites() {
       rollSpr.foot2.tile = ROLLFOOT2SPR
 
       rollSpr.arm1.attrs = ROLLSPRATTR
-      rollSpr.arm1.x = rollx-5
+      rollSpr.arm1.x = rollx.hi-5
       rollSpr.arm2.attrs = ROLLSPRATTR
-      rollSpr.arm2.x = rollx+5
+      rollSpr.arm2.x = rollx.hi+5
 
       rollSpr.ponytail.attrs = ROLLSPRATTR
-      rollSpr.ponytail.x = rollx-3
+      rollSpr.ponytail.x = rollx.hi-3
     } else {
       rollSpr.head.attrs = ROLLSPRATTRHFLIP
       rollSpr.body1.attrs = ROLLSPRATTRHFLIP
@@ -1189,42 +1378,42 @@ void updateSprites() {
       rollSpr.foot2.tile = ROLLFOOT1SPR
 
       rollSpr.arm1.attrs = ROLLSPRATTRHFLIP
-      rollSpr.arm1.x = rollx+5
+      rollSpr.arm1.x = rollx.hi+5
       rollSpr.arm2.attrs = ROLLSPRATTRHFLIP
-      rollSpr.arm2.x = rollx-5
+      rollSpr.arm2.x = rollx.hi-5
 
       rollSpr.ponytail.attrs = ROLLSPRATTRHFLIP
-      rollSpr.ponytail.x = rollx+3
+      rollSpr.ponytail.x = rollx.hi+3
     }
-    rollSpr.head.x = rollx
+    rollSpr.head.x = rollx.hi
 
-    rollSpr.body1.y = rolly
+    rollSpr.body1.y = rolly.hi
     rollSpr.body1.tile = ROLLBODYSPR
-    rollSpr.body1.x = rollx
+    rollSpr.body1.x = rollx.hi
 
-    rollSpr.body2.y = rolly+8
+    rollSpr.body2.y = rolly.hi+8
     rollSpr.body2.tile = ROLLBODY2SPR
-    rollSpr.body2.x = rollx
+    rollSpr.body2.x = rollx.hi
 
-    rollSpr.foot1.y = rolly+14
-    rollSpr.foot1.x = rollx-5
+    rollSpr.foot1.y = rolly.hi+14
+    rollSpr.foot1.x = rollx.hi-5
 
-    rollSpr.foot2.y = rolly+14
-    rollSpr.foot2.x = rollx+5
+    rollSpr.foot2.y = rolly.hi+14
+    rollSpr.foot2.x = rollx.hi+5
 
-    rollSpr.arm1.y = rolly+4
+    rollSpr.arm1.y = rolly.hi+4
     rollSpr.arm1.tile = ROLLARMSPR
 
-    rollSpr.arm2.y = rolly+4
+    rollSpr.arm2.y = rolly.hi+4
     rollSpr.arm2.tile = ROLLARMSPR
 
-    rollSpr.ponytail.y = rolly-2
+    rollSpr.ponytail.y = rolly.hi-2
     rollSpr.ponytail.tile = ROLLPONYTAILSPR
 
-    rollSpr.ribbon1.y = rolly-4
-    rollSpr.ribbon2.y = rolly-4
-    rollSpr.ribbon1.x = rollx-3
-    rollSpr.ribbon2.x = rollx+3
+    rollSpr.ribbon1.y = rolly.hi-4
+    rollSpr.ribbon2.y = rolly.hi-4
+    rollSpr.ribbon1.x = rollx.hi-3
+    rollSpr.ribbon2.x = rollx.hi+3
     rollSpr.ribbon1.tile = ROLLRIBBONSPR
     rollSpr.ribbon2.tile = ROLLRIBBONSPR
     rollSpr.ribbon1.attrs = ROLLSPRATTR

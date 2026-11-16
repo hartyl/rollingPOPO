@@ -107,7 +107,7 @@ const array chipFull = [
 ]
 
 const array heartSocketCells = [0,1,0+8,1+8]
-const array heartSocketTiles = [$82,$81,$83,' ', $81,$83,' ',$82, $83,' ',$82,$81, ' ',$82,$81,$83]
+const array heartSocketTiles = [$82,$89,$83,' ', $89,$83,' ',$82, $83,' ',$82,$89, ' ',$82,$89,$83]
 const array heartMissingWarning = "WARNING: NO HEART!"
 void heartPut() {
   heartX = (cursorX)/8&(-2)
@@ -144,14 +144,14 @@ void blasterPull() {
   wantedMaxBullets -= 2
 }
 
-const array energySocketTiles = [$82,$81,$83,'E', $81,$83,' ',$82, $83,' ',$82,$81, ' ',$82,$81,$83]
+const array energySocketTiles = [$82,$89,$83,'E', $89,$83,' ',$82, $83,' ',$82,$89, ' ',$82,$89,$83]
 const array energySocketCells = [0,1,0+8,1+8]
 
 void energyPut() {
-  rollSpd += 1
+  rollMaxSpeed += 1
 }
 void energyPull() {
-  rollSpd -= 1
+  rollMaxSpeed -= 1
 }
 
 const array bubbleWrapCells = [ 0 ]
@@ -162,6 +162,18 @@ void bubbleWrapPut() {
 }
 void bubbleWrapPull() {
   rollMaxHp -= 1
+  if rollHP > rollMaxHp {
+    rollHP = rollMaxHp
+  }
+  bubbleBuffer -= 1
+}
+
+const array bubble2WrapCells = [ 0 ]
+const array bubble2WrapTiles = [ $09, 'P', $09, $09 ]
+void bubble2WrapPut() {
+  bubbleBuffer += 1
+}
+void bubble2WrapPull() {
   bubbleBuffer -= 1
 }
 
@@ -195,6 +207,7 @@ const array doubleHeartTiles = [ $11, $3C, $11, $3C, $33, $10, $33, $10 ]
 void doubleHeartPut() {
   rollRegen += 1
 }
+
 void doubleHeartPull() {
   rollRegen -= 1
 }
@@ -244,15 +257,15 @@ array(Sprite) spr [16] @0x228
 array socketOwner[8*8]
 byte heartX, heartY
 
-const array(pointer) socketCells =              [heartSocketCells,       blasterSocketCells,        energySocketCells,        bubbleWrapCells,        spikesCells,        Cells2x1,         gunCells,        gunCells         ]
-const array(pointer) socketTiles =              [heartSocketTiles,       blasterSocketTiles,        energySocketTiles,        bubbleWrapTiles,        spikesTiles,        doubleHeartTiles, gunTiles,        gunTiles         ]
-const array(function.void.to.void) socketPut =  [heartPut,               blasterPut,                energyPut,                bubbleWrapPut,          spikesPut,          doubleHeartPut,   gun1Put,         gun2Put          ]
-const array(function.void.to.void) socketPull = [heartPull,              blasterPull,               energyPull,               bubbleWrapPull,         spikesPull,         doubleHeartPull,  gun1Pull,        gun2Pull         ]
-const array socketCellsLengths =                [heartSocketCells.length,blasterSocketCells.length, energySocketCells.length, bubbleWrapCells.length, spikesCells.length, Cells2x1.length,  gunCells.length, gunCells.length-1]
 byte i
+const array(pointer) socketCells =              [heartSocketCells,       blasterSocketCells,        energySocketCells,        bubbleWrapCells,        bubble2WrapCells,        spikesCells,        Cells2x1,         gunCells,        gunCells         ]
+const array(pointer) socketTiles =              [heartSocketTiles,       blasterSocketTiles,        energySocketTiles,        bubbleWrapTiles,        bubble2WrapTiles,        spikesTiles,        doubleHeartTiles, gunTiles,        gunTiles         ]
+const array(function.void.to.void) socketPut =  [heartPut,               blasterPut,                energyPut,                bubbleWrapPut,          bubble2WrapPut,          spikesPut,          doubleHeartPut,   gun1Put,         gun2Put          ]
+const array(function.void.to.void) socketPull = [heartPull,              blasterPull,               energyPull,               bubbleWrapPull,         bubble2WrapPull,         spikesPull,         doubleHeartPull,  gun1Pull,        gun2Pull         ]
+const array socketCellsLengths =                [heartSocketCells.length,blasterSocketCells.length, energySocketCells.length, bubbleWrapCells.length, bubble2WrapCells.length, spikesCells.length, Cells2x1.length,  gunCells.length, gunCells.length-1]
+const array prices =                            [0,                      2,                         5,                        5,                      2,                       8,                  4,                20,              15               ]
+const array(pointer) socketNames =              [pointer("heart"z),      pointer("blaster"z),       pointer("energy"z),       pointer("bubbleWrap"z), pointer("bubblePow"z),   pointer("spikes"z), pointer("doubleHeart"z),pointer("shotgun"z),pointer("gun."z)]
 //const array socketCellsLengths = [for i,0,until,socketCells.length [socketCells[i]->length]]
-const array prices =                            [0,                      2,                         5,                        1,                      8,                  4,                20,              15               ]
-const array(pointer) socketNames =              [pointer("heart"z),      pointer("blaster"z),       pointer("energy"z),       pointer("bubbleWrap"z), pointer("spikes"z), pointer("doubleHeart"z),pointer("shotgun"z),pointer("gun."z)]
 
 byte getRow(byte y, byte j) {
   return (y-PAUSETOPWALL)/2 + j/8
@@ -287,7 +300,8 @@ void placeOnSocket(byte x, byte y, byte a) {
   ppu_ctrl = %10010000
 }
 
-byte removeFromSocket(byte x, byte y) {
+byte removeFromSocket(byte x, byte y, bool pullHeart) {
+  //TODO this is a rat nest
   ppu_mask = 0
   ppu_ctrl = 0
   byte i
@@ -303,6 +317,9 @@ byte removeFromSocket(byte x, byte y) {
   }
   byte a
   a = id & %111111 // lower part (id)
+  if pullHeart == false && a == 0 {
+    return 0
+  }
   pointer socketCell
   socketCell = socketCells[a]
   read_ppu_status()
@@ -331,6 +348,16 @@ byte removeFromSocket(byte x, byte y) {
 }
 
 byte wantedMaxBullets
+const byte TOTALWORKERS = 7
+array workersX[TOTALWORKERS]
+array workersY[TOTALWORKERS]
+byte mode
+const byte MODESELECT = 0
+const byte MODEWORKERS = 1
+const byte MODEBUY = 2
+const byte MODEMOVE = 3
+const byte MODESELL = 4
+byte workerSelected
 
 void drawChip(byte color, pointer currentChip) {
   ppu_ctrl = %0
@@ -362,6 +389,7 @@ void drawChip(byte color, pointer currentChip) {
     }
   }
   ppu_ctrl = %00000100
+  ppu_mask = %00011000
 }
 
 void debugChip() {
@@ -446,18 +474,31 @@ void gamePauseInit() {
   ppu_set_scroll(255,0)
 }
 
+void gamePauseCreate() {
+  byte j
+  j=0
+  while j<TOTALWORKERS {
+    workersX[j] = rand()/2+32
+    workersY[j] = rand()/2+32
+    j+=1
+  }
+  workerSelected = -1
+  mode = MODEWORKERS
+}
+
 bool whiteHeart
 
-void pull(byte cX, byte cY) {
+byte pull(byte cX, byte cY, bool pullHeart) {
   byte price
   if (cX >= 8) || (cY >= 8) {
-    return
+    return selected
   }
   if sockets[cY] & POWS2[7-cX] > 0 {
-    return
+    return selected
   }
   byte id
-  id = removeFromSocket(cX*2+PAUSELEFTWALL,cY*2+PAUSETOPWALL)
+  id = removeFromSocket(cX*2+PAUSELEFTWALL,cY*2+PAUSETOPWALL, pullHeart)
+  if id & %111111 == 0 && pullHeart == false { return selected }
   if id > 0 {
     call(socketPull[id & %111111])
     price = prices[id & %111111]
@@ -469,10 +510,96 @@ void pull(byte cX, byte cY) {
     drawScore()
     rollMaxBullets = wantedMaxBullets
     if rollMaxBullets > TOTALBALLS { rollMaxBullets = TOTALBALLS }
+    return id & %111111
   }
+  return selected
+}
+
+void modeSelectInit() {
+  ppu_mask = 0
+  ppu_ctrl = 0
+  byte i,j
+  const byte textPosX = 1
+  ppu_set_addr(ppu_nametable_ram+$400+word(8)*32+ textPosX)
+  const array scorebackground = "Move Workers"
+  for i,0,until,scorebackground.length {
+    ppu_write_data(scorebackground[i])
+  }
+  ppu_set_addr(ppu_nametable_ram+$400+word(10)*32+ textPosX)
+  const array scorebackground1 = "Move Parts"
+  for i,0,until,scorebackground1.length {
+    ppu_write_data(scorebackground1[i])
+  }
+  ppu_set_addr(ppu_nametable_ram+$400+word(12)*32+ textPosX)
+  const array scorebackground2 = "Buy Parts"
+  for i,0,until,scorebackground2.length {
+    ppu_write_data(scorebackground2[i])
+  }
+  ppu_set_addr(ppu_nametable_ram+$400+word(14)*32+ textPosX)
+  const array scorebackground3 = "Sell Parts"
+  for i,0,until,scorebackground3.length {
+    ppu_write_data(scorebackground3[i])
+  }
+  ppu_set_addr(ppu_nametable_ram+$400+word(16)*32+ textPosX)
+  const array scorebackground4 = "Sell All"
+  for i,0,until,scorebackground4.length {
+    ppu_write_data(scorebackground4[i])
+  }
+  mode = MODESELECT
+  for j,0,until,i+1 {
+    spr[j].y = -1
+    spr[j].tile = BALLSPR
+  }
+  ppu_set_scroll(255,0)
+  ppu_mask = %00011000
+  ppu_ctrl = %10010000
+  ppu_wait_vblank()
+}
+void modeSelectEnd() {
+  ppu_mask = 0
+  ppu_ctrl = 0
+  byte i,j
+  const byte textPosX = 1
+  ppu_set_addr(ppu_nametable_ram+$400+word(8)*32+ textPosX)
+  const array scorebackground = "Move Workers"
+  for i,0,until,scorebackground.length {
+    ppu_write_data(' ')
+  }
+  ppu_set_addr(ppu_nametable_ram+$400+word(10)*32+ textPosX)
+  const array scorebackground1 = "Move Parts"
+  for i,0,until,scorebackground1.length {
+    ppu_write_data(' ')
+  }
+  ppu_set_addr(ppu_nametable_ram+$400+word(12)*32+ textPosX)
+  const array scorebackground2 = "Buy Parts"
+  for i,0,until,scorebackground2.length {
+    ppu_write_data(' ')
+  }
+  ppu_set_addr(ppu_nametable_ram+$400+word(14)*32+ textPosX)
+  const array scorebackground3 = "Sell Parts"
+  for i,0,until,scorebackground3.length {
+    ppu_write_data(' ')
+  }
+  ppu_set_addr(ppu_nametable_ram+$400+word(16)*32+ textPosX)
+  const array scorebackground4 = "Sell All"
+  for i,0,until,scorebackground4.length {
+    ppu_write_data(' ')
+  }
+  for j,0,until,i+1 {
+    spr[j].y = -1
+    spr[j].tile = BALLSPR
+  }
+  //ppu_set_scroll(255,0)
+  //ppu_mask = %00011000
+  //ppu_ctrl = %10010000
+  //ppu_wait_vblank()
 }
 
 void gamePauseLogic() {
+  //TOD revert this
+  //rollMaxBullets = TOTALBALLS
+  //bubbleBuffer = 100
+
   ppu_ctrl = %0
   ppu_mask = %0
   whiteHeart = not(whiteHeart)
@@ -489,83 +616,252 @@ void gamePauseLogic() {
   word w
   byte j
   bool condition
-  byte cX
-  byte cY
-  if input_select > 0 {
-    debugChip()
-  }
-  if prevA == %011 {
-    if score1 >= prices[selected] {
-      cX = (cursorX/8-PAUSELEFTWALL)/2
-      cY = (cursorY/8-PAUSETOPWALL)/2
-      condition = true
+  byte cX, cY
+  byte r
+  byte id, sock
+  //if input_select > 0 { debugChip() }
+  if mode == MODESELECT {
+    if prevA == 3 {
+      if modeSelectOption == 0 {
+        mode = MODEWORKERS
+        modeSelectEnd()
+      } else if modeSelectOption == 1 {
+        mode = MODEMOVE
+        selected = -1
+        modeSelectEnd()
+      } else if modeSelectOption == 2 {
+        mode = MODEBUY
+        if selected == 0 || selected == -1 {
+          selected = 1
+        }
+        modeSelectEnd()
+      } else if modeSelectOption == 3 {
+        mode = MODESELL
+        modeSelectEnd()
+      } else if modeSelectOption == 4 {
+        for i,0,until,8 {
+          for j,0,until,8 {
+            pull(i,j, false)
+          }
+        }
+      }
+    }
+    ppu_set_scroll(255,0)
+    ppu_ctrl = %10010000   // enable NMI, sprites from Pattern Table 0, background from Pattern Table 1
+    ppu_mask = %00011000   // enable sprites, enable background, no clipping on left side
+  } else if mode == MODEBUY {
+    if prevA == %011 {
+      if selected != -1 && score1 >= prices[selected] {
+        cX = (cursorX/8-PAUSELEFTWALL)/2
+        cY = (cursorY/8-PAUSETOPWALL)/2
+        condition = true
+        for i,0,until,socketCellsLengths[selected] {
+          j = socketCells[selected][i]
+          if (cX+(j&7) >= 8) || (cY+j/8 >= 8) || sockets[cY+j/8] & POWS2[7-cX-(j&7)] == 0 {
+            condition = false
+            break
+          }
+        }
+        if score1 < selected { condition = false }
+        if selected == 0 && heartY != -2 { condition = false }
+        if condition {
+          placeOnSocket(cX*2+PAUSELEFTWALL,cY*2+PAUSETOPWALL, selected)
+          call(socketPut[selected])
+          score1 -= prices[selected]
+          drawScore()
+          rollMaxBullets = wantedMaxBullets
+          if rollMaxBullets > TOTALBALLS { rollMaxBullets = TOTALBALLS }
+          //mode = MODEWORKERS
+          //selected = -1
+        }
+      }
+    } else if prevA == %010 {
+      ppu_set_addr(ppu_nametable_ram+$400+32*word(PAUSETOPWALL+1)+(2))
+      selected += 1
+      if selected >= socketCellsLengths.length {
+        selected = 1
+      }
+      drawPrice(prices[selected])
+      for i,0,until,8 { spr[i].y = -1 }
+      drawPriceTag()
+    } else if prevB == %010 {
+      if selected <= 1 {
+        selected = socketCellsLengths.length
+      }
+      selected -= 1
+      drawPrice(prices[selected])
+      for i,0,until,8 { spr[i].y = -1 }
+      drawPriceTag()
+    } else if prevB == %011 {
+      modeSelectInit()
+    }
+    cX = (cursorX)&(-16)
+    cY = (cursorY)&(-16)
+    ppu_set_scroll(255,0)
+    ppu_ctrl = %10010000   // enable NMI, sprites from Pattern Table 0, background from Pattern Table 1
+    ppu_mask = %00011000   // enable sprites, enable background, no clipping on left side
+    if selected != -1 {
+      if timer.lo & 2 > 0
+      { cX += 8 }
+      if (timer.lo+1) & 2 > 0
+      { cY += 8 }
+      //for each part of the component, draw a bullet
       for i,0,until,socketCellsLengths[selected] {
         j = socketCells[selected][i]
-        if (cX+(j&7) >= 8) || (cY+j/8 >= 8) || sockets[cY+j/8] & POWS2[7-cX-(j&7)] == 0 {
-          condition = false
-          break
+        spr[i].x = cX+(j&%000111)*16
+        spr[i].y = cY+(j&%111000)*2
+        spr[i].tile = BALLSPR
+      }
+    }
+  } else if mode == MODEMOVE {
+    if prevA == %011 {
+      if selected != -1 {
+        if score1 >= prices[selected] {
+          cX = (cursorX/8-PAUSELEFTWALL)/2
+          cY = (cursorY/8-PAUSETOPWALL)/2
+          condition = true
+          for i,0,until,socketCellsLengths[selected] {
+            j = socketCells[selected][i]
+            if (cX+(j&7) >= 8) || (cY+j/8 >= 8) || sockets[cY+j/8] & POWS2[7-cX-(j&7)] == 0 {
+              condition = false
+              break
+            }
+          }
+          if score1 < selected { condition = false }
+          if selected == 0 && heartY != -2 { condition = false }
+          if condition {
+            placeOnSocket(cX*2+PAUSELEFTWALL,cY*2+PAUSETOPWALL, selected)
+            call(socketPut[selected])
+            score1 -= prices[selected]
+            drawScore()
+            rollMaxBullets = wantedMaxBullets
+            if rollMaxBullets > TOTALBALLS { rollMaxBullets = TOTALBALLS }
+            //mode = MODEWORKERS
+            selected = -1
+            for j,0,until,i+1 {
+              spr[j].y = -1
+              spr[j].tile = BALLSPR
+            }
+          }
+        }
+      } else { //selected==-1
+        selected =
+        pull( (cursorX/8-PAUSELEFTWALL)/2, (cursorY/8-PAUSETOPWALL)/2, true)
+      }
+    } else if prevB == %11 {
+      if selected == -1 {
+        modeSelectInit()
+      }
+    }
+    cX = (cursorX)&(-16)
+    cY = (cursorY)&(-16)
+    ppu_set_scroll(255,0)
+    ppu_ctrl = %10010000   // enable NMI, sprites from Pattern Table 0, background from Pattern Table 1
+    ppu_mask = %00011000   // enable sprites, enable background, no clipping on left side
+    if selected != -1 {
+      if timer.lo & 2 > 0
+      { cX += 8 }
+      if (timer.lo+1) & 2 > 0
+      { cY += 8 }
+      //for each part of the component, draw a bullet
+      for i,0,until,socketCellsLengths[selected] {
+        j = socketCells[selected][i]
+        spr[i].x = cX+(j&%000111)*16
+        spr[i].y = cY+(j&%111000)*2
+        spr[i].tile = BALLSPR
+      }
+    }
+  } else if mode == MODESELL {
+    if prevA == %011 {
+      if input_select > 0 {
+        for i,0,until,8 {
+          for j,0,until,8 {
+            pull(i,j, false)
+          }
+        }
+      } else {
+        //selected =
+        pull( (cursorX/8-PAUSELEFTWALL)/2, (cursorY/8-PAUSETOPWALL)/2, false)
+      }
+    } else if prevB == 3 {
+      modeSelectInit()
+    }
+    ppu_set_scroll(255,0)
+    ppu_ctrl = %10010000   // enable NMI, sprites from Pattern Table 0, background from Pattern Table 1
+    ppu_mask = %00011000   // enable sprites, enable background, no clipping on left side
+  } else {
+    ppu_set_scroll(255,0)
+    ppu_ctrl = %10010000   // enable NMI, sprites from Pattern Table 0, background from Pattern Table 1
+    ppu_mask = %00011000   // enable sprites, enable background, no clipping on left side
+    if mode == MODEWORKERS {
+      j=0
+      i=0
+      while j<TOTALWORKERS {
+        i+=1
+        spr[i].x = workersX[j]
+        spr[i].y = workersY[j]-4
+        spr[i].tile = $43
+        i+=1
+        spr[i].x = workersX[j]
+        spr[i].y = workersY[j]
+        if spr[i].tile == ROLLTOPBOTSPR {
+          if rand()<6 {
+            spr[i].tile = $21
+          }
+        } else if rand()<50 {
+          spr[i].tile = ROLLTOPBOTSPR
+        }
+        i+=1
+        spr[i].x = workersX[j]
+        spr[i].y = workersY[j]+8
+        if spr[i].tile == $42 {
+          if rand()<50 {
+            spr[i].tile = $41
+          }
+        } else if rand()<50 {
+          spr[i].tile = $42
+        }
+        r = rand()&3
+        if r==0 {
+          workersX[j] += 1
+        } else if r==1 {
+          workersX[j] -= 1
+        } else if r==2 {
+          workersY[j] += 1
+        } else if r==3 {
+          workersY[j] -= 1
+        }
+        if prevA == 1 {
+          if cursorY-workersY[j] < 16 {
+            if cursorX-workersX[j] < 8 {
+              workerSelected = j
+            }
+          }
+        }
+        j+=1
+      }
+      if workerSelected != -1 {
+        j = workerSelected
+        workersX[j] = cursorX-4
+        workersY[j] = cursorY-4
+        if prevA & %111 == 0 {
+          workerSelected = -1
         }
       }
-      if score1 < selected { condition = false }
-      if selected == 0 && heartY != -2 { condition = false }
-      if condition {
-        placeOnSocket(cX*2+PAUSELEFTWALL,cY*2+PAUSETOPWALL, selected)
-        call(socketPut[selected])
-        score1 -= prices[selected]
-        drawScore()
-        rollMaxBullets = wantedMaxBullets
-        if rollMaxBullets > TOTALBALLS { rollMaxBullets = TOTALBALLS }
-      }
-    }
-  } else if prevB == %011 {
-    if input_select > 0 {
-      for i,0,until,8 {
-        for j,0,until,8 {
-          pull(i,j)
+      if prevB == 3 {
+        for j,0,until,i+1 {
+          spr[j].y = -1
+          spr[j].tile = BALLSPR
         }
+        modeSelectInit()
       }
-    } else {
-      pull( (cursorX/8-PAUSELEFTWALL)/2, (cursorY/8-PAUSETOPWALL)/2)
     }
-  } else if prevA == %010 {
-    ppu_set_addr(ppu_nametable_ram+$400+32*word(PAUSETOPWALL+1)+(2))
-    selected += 1
-    if selected >= socketCellsLengths.length {
-      selected = 0
-    }
-    drawPrice(prices[selected])
-    for i,0,until,8 { spr[i].y = -1 }
-
-    drawPriceTag()
-
-  } else if prevB == %010 {
-    if selected == 0 {
-      selected = socketCellsLengths.length
-    }
-    selected -= 1
-    drawPrice(prices[selected])
-    for i,0,until,8 { spr[i].y = -1 }
-    drawPriceTag()
   }
-  cX = (cursorX)&(-16)
-  cY = (cursorY)&(-16)
-  ppu_set_scroll(255,0)
-  if timer.lo & 2 > 0
-  { cX += 8 }
-  if (timer.lo+1) & 2 > 0
-  { cY += 8 }
-  for i,0,until,socketCellsLengths[selected] {
-    j = socketCells[selected][i]
-    spr[i].x = cX+(j&%000111)*16
-    spr[i].y = cY+(j&%111000)*2
-  }
-  ppu_set_scroll(255,0)
-  ppu_ctrl = %10010000   // enable NMI, sprites from Pattern Table 0, background from Pattern Table 1
-  ppu_mask = %00011000   // enable sprites, enable background, no clipping on left side
   if input_start > 0 {
     if pauseCooldown == 0 && heartY != -2 {
-      for i,0,until,8 {
-        spr[i].y = -1
+      for j,0,until,i+1 {
+        spr[j].y = -1
+        spr[j].tile = BALLSPR
       }
       pauseCooldown = 1
       gamestate = STATEPLAYING
@@ -575,30 +871,65 @@ void gamePauseLogic() {
   }
   prevA *= 2
   prevB *= 2
-  cursorX += input_dx
-  cursorY += input_dy
-  rollSpr.head.x = cursorX
-  rollSpr.head.tile = $4
-  rollSpr.head.attrs = ROLLSPRATTR
-  rollSpr.head.y = cursorY
+  if mode != MODESELECT {
+    cursorX += input_dx
+    cursorY += input_dy
+  } else {
+    if prevDy == 0 {
+      if input_dy > 0 {
+        modeSelectOption += 1
+        if modeSelectOption >= 5 {
+          modeSelectOption = 0
+        }
+      } else if input_dy < 0 {
+        if modeSelectOption == 0 {
+          modeSelectOption = 5
+        }
+        modeSelectOption -= 1
+      }
+    }
+    prevDy = input_dy
+  }
 
-  rollSpr.body1.x = cursorX
-  rollSpr.body1.tile = $14
-  rollSpr.body1.attrs = ROLLSPRATTR
-  rollSpr.body1.y = cursorY+8
+  if mode != MODESELECT {
+    rollSpr.head.x = cursorX
+    rollSpr.head.tile = 0x0d
+    rollSpr.head.attrs = ROLLSPRATTR
+    rollSpr.head.y = cursorY
+
+    rollSpr.body1.x = cursorX
+    rollSpr.body1.tile = 0x1d
+    rollSpr.body1.attrs = ROLLSPRATTR
+    rollSpr.body1.y = cursorY+8
+  } else {
+    rollSpr.head.x = 32
+    rollSpr.head.tile = 0x0d
+    rollSpr.head.attrs = ROLLSPRATTR
+    rollSpr.head.y = 64+modeSelectOption*16
+
+    rollSpr.body1.x = 32
+    rollSpr.body1.tile = 0x1d
+    rollSpr.body1.attrs = ROLLSPRATTR
+    rollSpr.body1.y = cursorY+8
+    rollSpr.head.y = 64+modeSelectOption*16+8
+  }
 }
 
 byte cursorX
 byte cursorY
 byte selected
+byte modeSelectOption
+byte prevDy
 
 void drawPauseMenu() {
   selected = 0
+  modeSelectOption = 0
+  prevDy = 0
   cursorX = 127
   cursorY = 127
   byte i
   for i,0,until,8 {
-    sockets[i] = chipFull[i]
+    sockets[i] = chipStarter[i]
   }
   for i:socketOwner {
     if sockets[i/8] & POWS2[7-(i&7)] > 0 {
@@ -659,7 +990,7 @@ void drawPauseMenu() {
   //for i,0,until,PAUSEBOTTOMWALL-PAUSETOPWALL {
   //  ppu_write_data($81)
   //}
-  ppu_ctrl = 0
+  //ppu_ctrl = 0
 }
 
 void drawHeart(byte x, byte y) {
